@@ -28,3 +28,17 @@ export interface SearchPayload {
   required_fields: string[];
   deal_type: "rent_offer";
 }
+
+// One row of the manage-subscriptions screen (?action=manage preload from
+// bot.py's _encode_manage_url). `fields` is the same edit-field shape a
+// single ?action=edit preload carries, minus action/profile_id -- editing
+// from the manage screen re-merges `id` back in as profile_id.
+export type ProfileFields = Omit<SearchPayload, "action" | "profile_id">;
+
+export interface ManageItem {
+  id: number;
+  active: boolean;
+  editable: boolean;
+  summary: string;
+  fields: ProfileFields;
+}

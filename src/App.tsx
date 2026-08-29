@@ -3,11 +3,12 @@ import { initTelegram, hapticImpact, hapticSelection } from "./lib/telegram";
 import { useWizardStore } from "./store/wizardStore";
 import { submitSearch } from "./lib/apiClient";
 import { getLang } from "./lib/telegram";
-import type { SearchPayload } from "./lib/types";
+import type { SearchPayload, ManageItem } from "./lib/types";
 import StepNameCity from "./components/StepNameCity";
 import StepDistricts from "./components/StepDistricts";
 import StepRanges from "./components/StepRanges";
 import StepFinal from "./components/StepFinal";
+import ManageSubs from "./components/ManageSubs";
 
 const I18N = {
   ru: {
@@ -33,6 +34,21 @@ const I18N = {
   },
 } as const;
 
+// Standard base64 (bot uses base64.b64encode + quote). atob handles the
+// +/= alphabet; URLSearchParams already unquoted %2B back to +. Shared by
+// both preload readers below -- only the query-param contract differs.
+function decodeBase64Json<T>(raw: string): T | null {
+  try {
+    const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
+    const bin = window.atob(b64);
+    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+    const json = new TextDecoder("utf-8").decode(bytes);
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
+}
+
 // Parse ?action=edit&pid=<id>&data=<base64 JSON> for preload.
 // Exported for direct unit testing (round-trip against the bot's encoding).
 export function readPreload(): Partial<SearchPayload> | null {
@@ -40,17 +56,17 @@ export function readPreload(): Partial<SearchPayload> | null {
   if (p.get("action") !== "edit") return null;
   const raw = p.get("data");
   if (!raw) return null;
-  try {
-    // Standard base64 (bot uses base64.b64encode + quote). atob handles the
-    // +/= alphabet; URLSearchParams already unquoted %2B back to +.
-    const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
-    const bin = window.atob(b64);
-    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
-    const json = new TextDecoder("utf-8").decode(bytes);
-    return JSON.parse(json) as Partial<SearchPayload>;
-  } catch {
-    return null;
-  }
+  return decodeBase64Json<Partial<SearchPayload>>(raw);
+}
+
+// Parse ?action=manage&data=<base64 JSON array> (bot.py's _encode_manage_url).
+export function readManagePreload(): ManageItem[] | null {
+  const p = new URLSearchParams(window.location.search);
+  if (p.get("action") !== "manage") return null;
+  const raw = p.get("data");
+  if (!raw) return null;
+  const items = decodeBase64Json<ManageItem[]>(raw);
+  return Array.isArray(items) ? items : null;
 }
 
 export default function App() {
@@ -67,18 +83,34 @@ export default function App() {
   const toPayload = useWizardStore((s) => s.toPayload);
 
   const [nameError, setNameError] = useState(false);
+  // "менеджер текущих подписок тоже должен быть в приложении" -- a second
+  // top-level screen alongside the create/edit wizard, entered via its own
+  // ?action=manage preload (bot.py's _encode_manage_url). Tapping ✏️ on a
+  // row switches mode back to "wizard" with that profile's fields loaded
+  // (see handleEditFromManage below) rather than reopening the Mini App.
+  const [mode, setMode] = useState<"wizard" | "manage">(() =>
+    readManagePreload() ? "manage" : "wizard"
+  );
+  const [manageItems] = useState<ManageItem[]>(() => readManagePreload() ?? []);
 
   useEffect(() => {
+    if (mode !== "wizard") return;
     const pre = readPreload();
     if (pre) loadFromPreload(pre);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Native BackButton wiring.
+  function handleEditFromManage(item: ManageItem) {
+    loadFromPreload({ ...item.fields, profile_id: item.id });
+    setMode("wizard");
+  }
+
+  // Native BackButton wiring. In manage mode there is no step to go back
+  // to -- Telegram's own close/swipe already covers "leave the screen".
   useEffect(() => {
     if (!tg) return;
     const bb = tg.BackButton;
-    if (step === 0) {
+    if (mode !== "wizard" || step === 0) {
       bb.hide();
     } else {
       bb.show();
@@ -89,7 +121,7 @@ export default function App() {
       bb.onClick(handler);
       return () => bb.offClick(handler);
     }
-  }, [tg, step, back]);
+  }, [tg, mode, step, back]);
 
   // Native MainButton: drives Next / Submit.
   //
@@ -108,6 +140,13 @@ export default function App() {
   // `name` in a separate effect that also doesn't retrigger this one).
   useEffect(() => {
     if (!tg) return;
+    // Manage mode has no single Next/Submit action -- each row's own
+    // buttons act immediately (see ManageSubs), so the native MainButton
+    // has nothing to drive here.
+    if (mode !== "wizard") {
+      tg.MainButton.hide();
+      return;
+    }
     const mb = tg.MainButton;
     const isFinal = step === 3;
     mb.setText(isFinal ? T.submit : T.next);
@@ -128,10 +167,18 @@ export default function App() {
     };
     mb.onClick(handler);
     return () => mb.offClick(handler);
-  }, [tg, step, next, toPayload, name, T.submit, T.next]);
+  }, [tg, mode, step, next, toPayload, name, T.submit, T.next]);
 
   const steps = [StepNameCity, StepDistricts, StepRanges, StepFinal];
   const StepComp = steps[step];
+
+  if (mode === "manage") {
+    return (
+      <div className="mx-auto flex min-h-full max-w-md flex-col px-4 pb-24 pt-4">
+        <ManageSubs items={manageItems} lang={lang} onEdit={handleEditFromManage} />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col px-4 pb-24 pt-4">
@@ -144,7 +191,7 @@ export default function App() {
             <div
               key={i}
               className={`h-1 flex-1 rounded-full ${
-                i <= step ? "bg-tg-accent" : "bg-tg-card"
+                i <= step ? "bg-accent" : "bg-line"
               }`}
             />
           ))}

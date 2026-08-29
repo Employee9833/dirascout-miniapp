@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, act } from "@testing-library/react";
-import App, { readPreload } from "./App";
+import { render, act, fireEvent } from "@testing-library/react";
+import App, { readPreload, readManagePreload } from "./App";
 import { useWizardStore } from "./store/wizardStore";
-import type { SearchPayload } from "./lib/types";
+import type { ManageItem } from "./lib/types";
 
 // Minimal fake Telegram.WebApp -- records whatever handler MainButton.onClick
 // was LAST given, mirroring the real SDK's "one active handler" contract
@@ -40,7 +40,7 @@ function makeFakeTg() {
 // see scripts/bot.py's _encode_edit_url) -- constructed independently here so
 // this test actually exercises the cross-language symmetry, not just JS's own
 // atob(btoa(x)) round-trip.
-function encodeLikeBot(data: Partial<SearchPayload>): string {
+function encodeLikeBot(data: unknown): string {
   const bytes = new TextEncoder().encode(JSON.stringify(data));
   const bin = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
   const b64 = btoa(bin);
@@ -114,5 +114,94 @@ describe("readPreload() (base64 round-trip with the bot's encoding)", () => {
   it("a malformed data param fails closed (null), not a thrown exception", () => {
     window.history.replaceState(null, "", "/?action=edit&pid=1&data=not-valid-base64!!!");
     expect(readPreload()).toBeNull();
+  });
+});
+
+describe("readManagePreload() (bot.py's _encode_manage_url contract)", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/");
+  });
+
+  const item: ManageItem = {
+    id: 5,
+    active: true,
+    editable: true,
+    summary: "🏙 Ашкелон\n💰 3000–4500 ₪",
+    fields: {
+      name: "Трёшка", city: "אשקלון", districts: [], rooms_min: null, rooms_max: null,
+      price_min: 3000, price_max: 4500, sqm_min: null, sqm_max: null, floor_min: null,
+      floor_max: null, mamad: "any", min_quality: "partial", required_fields: [],
+      deal_type: "rent_offer",
+    },
+  };
+
+  it("returns null with no ?action=manage", () => {
+    expect(readManagePreload()).toBeNull();
+  });
+
+  it("decodes a bot-encoded array back to the original objects", () => {
+    const url = "/?action=manage&data=" + encodeLikeBot([item]);
+    window.history.replaceState(null, "", url);
+    expect(readManagePreload()).toEqual([item]);
+  });
+
+  it("a malformed data param fails closed (null)", () => {
+    window.history.replaceState(null, "", "/?action=manage&data=not-valid-base64!!!");
+    expect(readManagePreload()).toBeNull();
+  });
+
+  it("fails closed (null) if the decoded JSON isn't an array", () => {
+    const url = "/?action=manage&data=" + encodeLikeBot(item);
+    window.history.replaceState(null, "", url);
+    expect(readManagePreload()).toBeNull();
+  });
+});
+
+describe("App manage-mode switching", () => {
+  beforeEach(() => {
+    useWizardStore.getState().reset();
+    (window as any).Telegram = undefined;
+    window.history.replaceState(null, "", "/");
+  });
+
+  const item: ManageItem = {
+    id: 9,
+    active: false,
+    editable: true,
+    summary: "🏙 Ашдод",
+    fields: {
+      name: "Двушка Ашдод", city: "אשדוד", districts: [], rooms_min: 2, rooms_max: 2,
+      price_min: null, price_max: null, sqm_min: null, sqm_max: null, floor_min: null,
+      floor_max: null, mamad: "any", min_quality: "partial", required_fields: [],
+      deal_type: "rent_offer",
+    },
+  };
+
+  it("renders the manage screen and hides MainButton when ?action=manage is present", () => {
+    const url = "/?action=manage&data=" + encodeLikeBot([item]);
+    window.history.replaceState(null, "", url);
+    const { tg } = makeFakeTg();
+    tg.initDataUnsafe = { user: { language_code: "ru" } };
+    (window as any).Telegram = { WebApp: tg };
+    const { getByText } = render(<App />);
+    expect(getByText("🏙 Ашдод", { exact: false })).toBeTruthy();
+    expect(tg.MainButton.hide).toHaveBeenCalled();
+  });
+
+  it("tapping edit on a manage row switches to the wizard preloaded with that profile", () => {
+    const url = "/?action=manage&data=" + encodeLikeBot([item]);
+    window.history.replaceState(null, "", url);
+    const { tg } = makeFakeTg();
+    tg.initDataUnsafe = { user: { language_code: "ru" } };
+    (window as any).Telegram = { WebApp: tg };
+    const { getByText } = render(<App />);
+    act(() => {
+      fireEvent.click(getByText("✏️ Изменить"));
+    });
+    const s = useWizardStore.getState();
+    expect(s.action).toBe("edit");
+    expect(s.profile_id).toBe(9);
+    expect(s.name).toBe("Двушка Ашдод");
+    expect(s.city).toBe("אשדוד");
   });
 });

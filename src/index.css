@@ -3,13 +3,25 @@
 @tailwind utilities;
 
 :root {
-  /* Telegram themeParams fallbacks (light) */
+  /* Telegram themeParams fallbacks (light). initTelegram() (lib/telegram.ts)
+     overwrites all of these from the real theme before first paint when
+     opened inside Telegram; the media query below is only for opening the
+     page bare (dev preview, a browser tab), so it never fights the SDK. */
   --tg-bg: #ffffff;
   --tg-fg: #171717;
   --tg-hint: #808080;
   --tg-accent: #0a72ef;
   --tg-accent-text: #ffffff;
   --tg-card: #fafafa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-bg: #17212b;
+    --tg-fg: #f5f5f5;
+    --tg-hint: #8a99a5;
+    --tg-card: #232e3c;
+  }
 }
 
 html,

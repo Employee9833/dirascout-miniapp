@@ -52,6 +52,12 @@ export function initTelegram(): TelegramWebAppLike | null {
   if (tp?.button_color) document.documentElement.style.setProperty("--tg-accent", tp.button_color);
   if (tp?.button_text_color)
     document.documentElement.style.setProperty("--tg-accent-text", tp.button_text_color);
+  // 2026-08-29 review: was typed on ThemeParams but never actually read --
+  // --tg-card stayed hardcoded #fafafa forever, so every card/field/pill
+  // (tailwind.config.js's `surface`/`tint` tokens) rendered white even in a
+  // dark Telegram theme, against a now-correctly-dark --tg-bg page.
+  if (tp?.secondary_bg_color)
+    document.documentElement.style.setProperty("--tg-card", tp.secondary_bg_color);
   return tg;
 }
 
