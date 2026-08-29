@@ -114,7 +114,7 @@ export default function StepFinal() {
                 }}
                 className={`pill border ${
                   on
-                    ? "border-transparent bg-ink text-accent-text"
+                    ? "border-transparent bg-ink text-page"
                     : "border-line bg-surface text-ink"
                 }`}
               >

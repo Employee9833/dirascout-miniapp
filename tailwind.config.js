@@ -18,6 +18,15 @@ export default {
         tint: "var(--tg-card, #fafafa)",
         accent: "var(--tg-accent, #0a72ef)",
         "accent-text": "var(--tg-accent-text, #ffffff)",
+        // The page's own background, for the one place (StepFinal's
+        // required-fields "on" pill) that wants an INVERTED ink/page pair
+        // rather than the accent/accent-text pair everything else uses --
+        // ink and page are always readable against each other (that's what
+        // a theme's own fg/bg contrast guarantees), unlike pairing ink with
+        // accent-text (2026-08-30 bug: bg-ink + text-accent-text both
+        // resolved to a light color in Telegram's dark theme -- white text
+        // on a white pill, found live from a screenshot).
+        page: "var(--tg-bg, #ffffff)",
       },
       fontFamily: {
         sans: [
