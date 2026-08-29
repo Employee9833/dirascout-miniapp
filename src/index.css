@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Telegram themeParams fallbacks (light) */
+  --tg-bg: #ffffff;
+  --tg-fg: #171717;
+  --tg-hint: #808080;
+  --tg-accent: #0a72ef;
+  --tg-accent-text: #ffffff;
+  --tg-card: #fafafa;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--tg-bg);
+  color: var(--tg-fg);
+  font-family: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* Shared component classes (Vercel-inspired: shadow-as-border, tight radius) */
+.field {
+  @apply w-full rounded-btn bg-surface px-3 py-2.5 text-[16px] text-ink shadow-border outline-none;
+}
+.field:focus {
+  box-shadow: 0 0 0 2px hsla(212, 100%, 48%, 1);
+}
+.label {
+  @apply mb-1.5 block text-[13px] font-medium text-sub;
+}
+.card {
+  @apply rounded-card bg-surface p-4 shadow-card;
+}
+.pill {
+  @apply inline-flex items-center justify-center rounded-pill px-3 py-1.5 text-[14px] font-medium;
+}
