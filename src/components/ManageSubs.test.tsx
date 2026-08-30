@@ -9,12 +9,6 @@ function makeItem(overrides: Partial<ManageItem> = {}): ManageItem {
     active: true,
     editable: true,
     summary: "🏙 Ашкелон\n💰 3000–4500 ₪",
-    fields: {
-      name: "Трёшка", city: "אשקלון", districts: [], rooms_min: null, rooms_max: null,
-      price_min: 3000, price_max: 4500, sqm_min: null, sqm_max: null, floor_min: null,
-      floor_max: null, mamad: "any", min_quality: "partial", required_fields: [],
-      deal_type: "rent_offer",
-    },
     ...overrides,
   };
 }
@@ -30,13 +24,13 @@ describe("ManageSubs", () => {
   });
 
   it("shows the empty state with no items", () => {
-    const { getByText } = render(<ManageSubs items={[]} lang="ru" onEdit={vi.fn()} />);
+    const { getByText } = render(<ManageSubs items={[]} lang="ru" />);
     expect(getByText("Подписок пока нет.")).toBeTruthy();
   });
 
   it("toggle sends {action:'toggle', profile_id} immediately (one tap)", () => {
     const item = makeItem();
-    const { getByText } = render(<ManageSubs items={[item]} lang="ru" onEdit={vi.fn()} />);
+    const { getByText } = render(<ManageSubs items={[item]} lang="ru" />);
     fireEvent.click(getByText("⏸ Пауза"));
     const sendData = (window as any).Telegram.WebApp.sendData;
     expect(sendData).toHaveBeenCalledWith(JSON.stringify({ action: "toggle", profile_id: 3 }));
@@ -44,7 +38,7 @@ describe("ManageSubs", () => {
 
   it("delete requires a second tap before sending (fat-finger guard)", () => {
     const item = makeItem();
-    const { getByText } = render(<ManageSubs items={[item]} lang="ru" onEdit={vi.fn()} />);
+    const { getByText } = render(<ManageSubs items={[item]} lang="ru" />);
     const sendData = (window as any).Telegram.WebApp.sendData;
     fireEvent.click(getByText("🗑 Удалить"));
     expect(sendData).not.toHaveBeenCalled();
@@ -54,16 +48,15 @@ describe("ManageSubs", () => {
 
   it("hides the edit button for a non-editable item (the personal City profile)", () => {
     const item = makeItem({ editable: false });
-    const { queryByText } = render(<ManageSubs items={[item]} lang="ru" onEdit={vi.fn()} />);
+    const { queryByText } = render(<ManageSubs items={[item]} lang="ru" />);
     expect(queryByText("✏️ Изменить")).toBeNull();
   });
 
-  it("edit calls onEdit with the item, without touching sendData", () => {
+  it("edit sends {action:'edit_open', profile_id} immediately (one tap, no local mode switch)", () => {
     const item = makeItem();
-    const onEdit = vi.fn();
-    const { getByText } = render(<ManageSubs items={[item]} lang="ru" onEdit={onEdit} />);
+    const { getByText } = render(<ManageSubs items={[item]} lang="ru" />);
     fireEvent.click(getByText("✏️ Изменить"));
-    expect(onEdit).toHaveBeenCalledWith(item);
-    expect((window as any).Telegram.WebApp.sendData).not.toHaveBeenCalled();
+    const sendData = (window as any).Telegram.WebApp.sendData;
+    expect(sendData).toHaveBeenCalledWith(JSON.stringify({ action: "edit_open", profile_id: 3 }));
   });
 });

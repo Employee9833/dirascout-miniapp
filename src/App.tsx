@@ -85,12 +85,14 @@ export default function App() {
   const [nameError, setNameError] = useState(false);
   // "менеджер текущих подписок тоже должен быть в приложении" -- a second
   // top-level screen alongside the create/edit wizard, entered via its own
-  // ?action=manage preload (bot.py's _encode_manage_url). Tapping ✏️ on a
-  // row switches mode back to "wizard" with that profile's fields loaded
-  // (see handleEditFromManage below) rather than reopening the Mini App.
-  const [mode, setMode] = useState<"wizard" | "manage">(() =>
-    readManagePreload() ? "manage" : "wizard"
-  );
+  // ?action=manage preload (bot.py's _encode_manage_url). Fixed for the
+  // whole session (never toggled after mount): tapping ✏️ on a row
+  // now sends {action:"edit_open"} and closes the app instead of switching
+  // mode in place (2026-08-30 -- the manage payload stopped carrying every
+  // row's full edit fields, see ManageSubs/_encode_manage_url, so there's
+  // nothing left here to preload a wizard screen with).
+  const mode: "wizard" | "manage" =
+    new URLSearchParams(window.location.search).get("action") === "manage" ? "manage" : "wizard";
   const [manageItems] = useState<ManageItem[]>(() => readManagePreload() ?? []);
 
   useEffect(() => {
@@ -99,11 +101,6 @@ export default function App() {
     if (pre) loadFromPreload(pre);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  function handleEditFromManage(item: ManageItem) {
-    loadFromPreload({ ...item.fields, profile_id: item.id });
-    setMode("wizard");
-  }
 
   // Native BackButton wiring. In manage mode there is no step to go back
   // to -- Telegram's own close/swipe already covers "leave the screen".
@@ -175,7 +172,7 @@ export default function App() {
   if (mode === "manage") {
     return (
       <div className="mx-auto flex min-h-full max-w-md flex-col px-4 pb-24 pt-4">
-        <ManageSubs items={manageItems} lang={lang} onEdit={handleEditFromManage} />
+        <ManageSubs items={manageItems} lang={lang} />
       </div>
     );
   }

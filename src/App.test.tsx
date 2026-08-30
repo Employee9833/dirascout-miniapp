@@ -127,12 +127,6 @@ describe("readManagePreload() (bot.py's _encode_manage_url contract)", () => {
     active: true,
     editable: true,
     summary: "🏙 Ашкелон\n💰 3000–4500 ₪",
-    fields: {
-      name: "Трёшка", city: "אשקלון", districts: [], rooms_min: null, rooms_max: null,
-      price_min: 3000, price_max: 4500, sqm_min: null, sqm_max: null, floor_min: null,
-      floor_max: null, mamad: "any", min_quality: "partial", required_fields: [],
-      deal_type: "rent_offer",
-    },
   };
 
   it("returns null with no ?action=manage", () => {
@@ -169,12 +163,6 @@ describe("App manage-mode switching", () => {
     active: false,
     editable: true,
     summary: "🏙 Ашдод",
-    fields: {
-      name: "Двушка Ашдод", city: "אשדוד", districts: [], rooms_min: 2, rooms_max: 2,
-      price_min: null, price_max: null, sqm_min: null, sqm_max: null, floor_min: null,
-      floor_max: null, mamad: "any", min_quality: "partial", required_fields: [],
-      deal_type: "rent_offer",
-    },
   };
 
   it("renders the manage screen and hides MainButton when ?action=manage is present", () => {
@@ -188,7 +176,7 @@ describe("App manage-mode switching", () => {
     expect(tg.MainButton.hide).toHaveBeenCalled();
   });
 
-  it("tapping edit on a manage row switches to the wizard preloaded with that profile", () => {
+  it("tapping edit on a manage row sends {action:'edit_open'} instead of switching mode locally", () => {
     const url = "/?action=manage&data=" + encodeLikeBot([item]);
     window.history.replaceState(null, "", url);
     const { tg } = makeFakeTg();
@@ -198,10 +186,8 @@ describe("App manage-mode switching", () => {
     act(() => {
       fireEvent.click(getByText("✏️ Изменить"));
     });
-    const s = useWizardStore.getState();
-    expect(s.action).toBe("edit");
-    expect(s.profile_id).toBe(9);
-    expect(s.name).toBe("Двушка Ашдод");
-    expect(s.city).toBe("אשדוד");
+    expect(tg.sendData).toHaveBeenCalledWith(JSON.stringify({ action: "edit_open", profile_id: 9 }));
+    // No local wizard state change -- edit is now a bot round trip, not an in-app mode switch.
+    expect(useWizardStore.getState().action).toBe("new");
   });
 });

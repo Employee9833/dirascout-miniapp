@@ -30,15 +30,15 @@ export interface SearchPayload {
 }
 
 // One row of the manage-subscriptions screen (?action=manage preload from
-// bot.py's _encode_manage_url). `fields` is the same edit-field shape a
-// single ?action=edit preload carries, minus action/profile_id -- editing
-// from the manage screen re-merges `id` back in as profile_id.
-export type ProfileFields = Omit<SearchPayload, "action" | "profile_id">;
-
+// bot.py's _encode_manage_url). No `fields` here on purpose (2026-08-30):
+// embedding every row's full edit-field set made this URL long enough that
+// Telegram clients silently refused to open the web_app button at all past
+// a couple of subscriptions. Editing sends {action:"edit_open", profile_id}
+// instead and the bot replies with a fresh, short single-profile edit link
+// (same one /subs' own ✏️ button already uses).
 export interface ManageItem {
   id: number;
   active: boolean;
   editable: boolean;
   summary: string;
-  fields: ProfileFields;
 }

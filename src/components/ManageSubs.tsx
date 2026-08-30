@@ -38,11 +38,9 @@ const I18N = {
 export default function ManageSubs({
   items,
   lang,
-  onEdit,
 }: {
   items: ManageItem[];
   lang: "ru" | "he" | "en";
-  onEdit: (item: ManageItem) => void;
 }) {
   const T = I18N[lang];
   // Delete needs a second tap: /subs' own inline 🗑 has no confirmation
@@ -53,7 +51,7 @@ export default function ManageSubs({
   // fat-finger on a screen with several rows close together.
   const [confirmId, setConfirmId] = useState<number | null>(null);
 
-  function act(action: "toggle" | "delete", id: number) {
+  function act(action: "toggle" | "delete" | "edit_open", id: number) {
     hapticImpact("light");
     submitViaSendData({ action, profile_id: id });
   }
@@ -84,10 +82,7 @@ export default function ManageSubs({
             {item.editable && (
               <button
                 type="button"
-                onClick={() => {
-                  hapticSelection();
-                  onEdit(item);
-                }}
+                onClick={() => act("edit_open", item.id)}
                 className="pill border border-line bg-surface text-ink"
               >
                 {T.edit}
