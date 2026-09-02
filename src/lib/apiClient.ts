@@ -9,6 +9,10 @@ import { getInitData } from "./telegram";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
+// Generous enough for a cold tunnel hop, short enough that a stalled request
+// surfaces as an error while the user is still looking at the screen.
+export const REQUEST_TIMEOUT_MS = 15000;
+
 // Thrown on a 401 response -- callers (subscriptionsStore) turn this into a
 // "session expired" UI state rather than treating it like any other error,
 // since the fix is "reopen the Mini App", not "retry the request".
@@ -34,13 +38,41 @@ export function tmaFetch(input: string, init: RequestInit = {}): Promise<Respons
   if (init.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  return fetch(`${API_BASE}${input}`, { ...init, headers });
+  // A timeout is not optional here. The API is reached through a Cloudflare
+  // Tunnel that itself egresses via a Tailscale exit node (see the P2 notes):
+  // several hops, any of which can stall without ever closing the socket. A
+  // fetch() that never settles leaves every caller's `loading` flag true
+  // forever -- the UI shows a spinner with no error and no way out, which is
+  // indistinguishable from "the app is broken". Failing loudly after
+  // REQUEST_TIMEOUT_MS is strictly better than hanging silently.
+  // AbortSignal.timeout() is not used: Telegram's in-app WebViews lag
+  // browser baselines and it is absent on older ones (a TypeError there
+  // would break every request), so this uses the universally-supported
+  // AbortController + setTimeout, clearing the timer on settle.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(`${API_BASE}${input}`, {
+    ...init,
+    headers,
+    signal: init.signal ?? controller.signal,
+  }).finally(() => clearTimeout(timer));
 }
 
 /** JSON in, JSON out, typed. 401 -> UnauthorizedError; any other non-2xx ->
  * ApiError carrying the status and the server's plain-text/JSON detail. */
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await tmaFetch(path, init);
+  let res: Response;
+  try {
+    res = await tmaFetch(path, init);
+  } catch (e) {
+    // An aborted request surfaces as a bare "AbortError"/"signal is
+    // aborted" DOMException, which tells the user nothing. Name the actual
+    // situation instead -- the store puts this string straight on screen.
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new ApiError(0, "Сервер не отвечает. Проверьте связь и попробуйте снова.");
+    }
+    throw e;
+  }
   if (res.status === 401) {
     throw new UnauthorizedError("session expired");
   }

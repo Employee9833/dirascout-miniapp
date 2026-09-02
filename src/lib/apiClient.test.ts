@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { tmaFetch, apiRequest, UnauthorizedError, ApiError } from "./apiClient";
+import {
+  tmaFetch,
+  apiRequest,
+  UnauthorizedError,
+  ApiError,
+  REQUEST_TIMEOUT_MS,
+} from "./apiClient";
 
 beforeEach(() => {
   (window as any).Telegram = { WebApp: { initData: "auth_date=1&hash=abc" } };
@@ -46,6 +52,38 @@ describe("tmaFetch", () => {
     await tmaFetch("/api/subscriptions");
     const [, init] = fetchMock.mock.calls[0];
     expect(init.credentials).toBeUndefined();
+  });
+});
+
+describe("apiRequest: hung request", () => {
+  it("aborts instead of hanging forever, and reports it as a readable error", async () => {
+    // Regression: with no timeout a stalled fetch never settles, so the
+    // caller's `loading` flag stays true and the screen shows a spinner
+    // with no error and no exit (reported live 2026-09-02 as "вечная
+    // загрузка"). The path to the API is tunnel -> Tailscale exit node ->
+    // Cloudflare, any hop of which can stall without closing the socket.
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            // never resolves on its own -- only the abort signal ends it
+            init.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")));
+          }),
+        ),
+      );
+      const p = apiRequest("/api/subscriptions");
+      const assertion = expect(p).rejects.toMatchObject({
+        status: 0,
+        message: expect.stringContaining("не отвечает"),
+      });
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 10);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

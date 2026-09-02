@@ -16,6 +16,7 @@ const I18N = {
     paused: "⏸ на паузе",
     anyCity: "любой город",
     rooms: "комн.",
+    loading: "Загружаем подписки…",
   },
   he: {
     title: "החיפושים שלי",
@@ -28,6 +29,7 @@ const I18N = {
     paused: "⏸ מושהה",
     anyCity: "כל עיר",
     rooms: "חד'",
+    loading: "טוען חיפושים…",
   },
   en: {
     title: "My subscriptions",
@@ -40,6 +42,7 @@ const I18N = {
     paused: "⏸ paused",
     anyCity: "any city",
     rooms: "rooms",
+    loading: "Loading subscriptions…",
   },
 } as const;
 
@@ -95,7 +98,11 @@ export default function ManageSubs({
   }
 
   if (loading && items.length === 0) {
-    return <p className="text-[14px] text-muted">…</p>;
+    // Was a bare "…", which on a dark screen reads as a blank/hung app
+    // rather than as "working on it" -- the user reported it as "вечная
+    // загрузка" (2026-09-02). Say what is happening in words; the request
+    // itself can no longer hang forever (apiClient's REQUEST_TIMEOUT_MS).
+    return <p className="text-[14px] text-muted">{T.loading}</p>;
   }
 
   // A failed fetch (network/CSP block, 5xx, ...) must not read as "no
