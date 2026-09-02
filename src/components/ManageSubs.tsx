@@ -140,7 +140,7 @@ export default function ManageSubs({
             <p className="whitespace-pre-line text-[14px] text-ink">
               {summarize(item, T)}
               {!item.active && (
-                <span className="ml-2 text-[12px] text-muted">{T.paused}</span>
+                <span className="ms-2 text-[12px] text-muted">{T.paused}</span>
               )}
             </p>
             <div className="flex flex-wrap gap-2">

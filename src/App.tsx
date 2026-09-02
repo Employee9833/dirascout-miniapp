@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { initTelegram, hapticImpact, hapticSelection } from "./lib/telegram";
 import { useWizardStore } from "./store/wizardStore";
 import { useSubscriptionsStore } from "./store/subscriptionsStore";
@@ -82,7 +82,19 @@ export default function App() {
   const subsSessionExpired = useSubscriptionsStore((s) => s.sessionExpired);
 
   const [nameError, setNameError] = useState(false);
-  const [submitError, setSubmitError] = useState(false);
+  // Holds the actual server/network message, not a boolean -- a generic
+  // "could not save, try again" (found live 2026-09-02) told the user
+  // nothing when the real reason was e.g. "«rooms_min»/«rooms_max»: от не
+  // может быть больше чем до", which retrying can never fix.
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Belt-and-suspenders against a double-tap creating two profiles:
+  // mb.disable() is the primary guard, but Telegram's own docs never state
+  // whether the native button actually suppresses the tap event while
+  // isActive=false (found in audit, 2026-09-02 -- the docs describe the
+  // property, not that guarantee), so this doesn't rely on it. A plain
+  // useState boolean would also work for the check, but re-render timing
+  // between two rapid taps is exactly what a ref sidesteps.
+  const submitting = useRef(false);
   // "менеджер текущих подписок тоже должен быть в приложении" -- a second
   // top-level screen alongside the create/edit wizard. Mutable now (2026-09-01,
   // REST): tapping ✏️ on a manage row loads that subscription straight into
@@ -106,6 +118,18 @@ export default function App() {
     if (pre) loadFromPreload(pre);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Hebrew is a first-class language here, not an afterthought -- but
+  // index.html hardcodes lang="ru" (it has to be static, getLang() only
+  // knows the user's language after Telegram.WebApp initializes) and
+  // nothing anywhere ever set `dir`, so a Hebrew user always got an
+  // ltr-rendered page: text alignment, the step-indicator dots' fill
+  // direction, everything reading in the wrong order (found in audit,
+  // 2026-09-02 -- no dir/rtl usage existed anywhere in the frontend).
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
+  }, [lang]);
 
   function openEdit(item: Subscription) {
     resetWizard();
@@ -176,7 +200,9 @@ export default function App() {
     const handler = () => {
       hapticSelection();
       if (isFinal) {
-        setSubmitError(false);
+        if (submitting.current) return;
+        submitting.current = true;
+        setSubmitError(null);
         mb.disable();
         // toPayload()'s "action"/"profile_id" are extra, harmless keys as
         // far as the store/API are concerned (api_server.py's own
@@ -188,17 +214,22 @@ export default function App() {
             ? patchSub(payload.profile_id, payload)
             : createSub(payload);
         req.then((result) => {
+          submitting.current = false;
           mb.enable();
           // create() resolves null on failure; patch() has no return value
           // to check, so a failed patch is read off the store's own error/
           // sessionExpired flags instead (set synchronously by the store
           // before this .then() runs, since both are awaited promises).
+          // Both failure paths always set `error` before resolving (see
+          // subscriptionsStore's catch blocks), UNLESS it was a 401 --
+          // that's `subsSessionExpired`, already shown as its own message.
+          const storeError = useSubscriptionsStore.getState().error;
           const failed =
             (action !== "edit" && result === null) ||
-            useSubscriptionsStore.getState().error !== null ||
+            storeError !== null ||
             useSubscriptionsStore.getState().sessionExpired;
           if (failed) {
-            setSubmitError(true);
+            setSubmitError(storeError ?? T.submitError);
             return;
           }
           if (returnToManage) {
@@ -265,7 +296,7 @@ export default function App() {
         <p className="mt-3 text-[13px] text-red-500">{T.sessionExpired}</p>
       )}
       {submitError && !subsSessionExpired && (
-        <p className="mt-3 text-[13px] text-red-500">{T.submitError}</p>
+        <p className="mt-3 text-[13px] text-red-500">{submitError}</p>
       )}
     </div>
   );

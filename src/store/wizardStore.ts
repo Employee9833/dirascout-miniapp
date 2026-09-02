@@ -63,7 +63,20 @@ export const useWizardStore = create<WizardState>((set, get) => ({
   back: () => set((s) => ({ step: Math.max(0, s.step - 1) as WizardStep })),
   goTo: (s) => set({ step: s }),
 
-  set: (key, value) => set({ [key]: value } as Partial<WizardState>),
+  // A city change clears districts (found live, 2026-09-02: pick a
+  // district in city A, switch to city B, and it silently stays in the
+  // payload -- city B's district list doesn't contain it, so it never even
+  // shows as selected to un-pick, and the saved profile can never match
+  // anything). Every OTHER field via `set` unconditionally overwrites, so
+  // this is the one key that needs the special case, not a reason to give
+  // every field its own setter.
+  set: (key, value) =>
+    set((s) => {
+      if (key === "city" && value !== s.city) {
+        return { city: value, districts: [] } as Partial<WizardState>;
+      }
+      return { [key]: value } as Partial<WizardState>;
+    }),
 
   toggleDistrict: (d) =>
     set((s) => ({

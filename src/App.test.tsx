@@ -198,3 +198,63 @@ describe("App manage-mode (REST, 2026-09-01)", () => {
     expect(tg.BackButton.show).toHaveBeenCalled();
   });
 });
+
+describe("App: double-tap guard on submit (2026-09-02 audit)", () => {
+  beforeEach(() => {
+    useWizardStore.getState().reset();
+    useSubscriptionsStore.setState({ items: [], loading: false, error: null, sessionExpired: false });
+    (window as any).Telegram = undefined;
+    window.history.replaceState(null, "", "/");
+    vi.restoreAllMocks();
+  });
+
+  it("a second tap before the request resolves does not send a second create", async () => {
+    let resolveFetch: (v: unknown) => void = () => {};
+    const fetchMock = vi.fn(
+      () => new Promise((resolve) => { resolveFetch = resolve; }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { tg, clickMain } = makeFakeTg();
+    (window as any).Telegram = { WebApp: tg };
+    render(<App />);
+    act(() => {
+      useWizardStore.getState().set("name", "Тест");
+      useWizardStore.getState().goTo(3);
+    });
+    act(() => { clickMain(); }); // first tap -- in flight, never resolved yet
+    act(() => { clickMain(); }); // second tap while the first is still pending
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveFetch({ ok: true, status: 201, json: async () => ({ id: 1, active: true }) });
+      await Promise.resolve();
+    });
+  });
+});
+
+describe("App: document dir/lang (RTL, 2026-09-02 audit)", () => {
+  beforeEach(() => {
+    useWizardStore.getState().reset();
+    (window as any).Telegram = undefined;
+    window.history.replaceState(null, "", "/");
+    document.documentElement.removeAttribute("dir");
+    document.documentElement.lang = "";
+  });
+
+  it("sets dir=rtl and lang=he for a Hebrew user", () => {
+    const { tg } = makeFakeTg();
+    tg.initDataUnsafe = { user: { language_code: "he" } };
+    (window as any).Telegram = { WebApp: tg };
+    render(<App />);
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(document.documentElement.lang).toBe("he");
+  });
+
+  it("sets dir=ltr for ru/en users", () => {
+    const { tg } = makeFakeTg();
+    tg.initDataUnsafe = { user: { language_code: "ru" } };
+    (window as any).Telegram = { WebApp: tg };
+    render(<App />);
+    expect(document.documentElement.dir).toBe("ltr");
+    expect(document.documentElement.lang).toBe("ru");
+  });
+});

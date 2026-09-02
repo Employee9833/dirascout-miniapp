@@ -24,6 +24,35 @@ describe("wizardStore: step navigation", () => {
   });
 });
 
+describe("wizardStore: set('city', ...) clears stale districts", () => {
+  it("changing city drops districts picked for the old city", () => {
+    const { set, toggleDistrict } = useWizardStore.getState();
+    set("city", "אשקלון");
+    toggleDistrict("אפרידר");
+    expect(useWizardStore.getState().districts).toEqual(["אפרידר"]);
+
+    set("city", "אשדוד");
+    expect(useWizardStore.getState().districts).toEqual([]);
+    expect(useWizardStore.getState().city).toBe("אשדוד");
+  });
+
+  it("re-setting the SAME city does not clear districts (not a real change)", () => {
+    const { set, toggleDistrict } = useWizardStore.getState();
+    set("city", "אשקלון");
+    toggleDistrict("אפרידר");
+    set("city", "אשקלון");
+    expect(useWizardStore.getState().districts).toEqual(["אפרידר"]);
+  });
+
+  it("other fields are unaffected by the city special-case", () => {
+    const { set } = useWizardStore.getState();
+    set("name", "test");
+    set("price_min", 3000);
+    expect(useWizardStore.getState().name).toBe("test");
+    expect(useWizardStore.getState().price_min).toBe(3000);
+  });
+});
+
 describe("wizardStore: toggleDistrict / toggleRequired", () => {
   it("toggles a district on, then off", () => {
     const { toggleDistrict } = useWizardStore.getState();
