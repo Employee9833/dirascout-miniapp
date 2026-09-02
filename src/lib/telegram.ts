@@ -78,15 +78,20 @@ export function hapticImpact(s: "light" | "medium" | "heavy" = "light"): void {
   getWebApp()?.HapticFeedback.impactOccurred(s);
 }
 
-// Submit the collected payload. For now this goes straight to the bot via
-// sendData (the existing integration). The network layer in apiClient.ts is
-// the future path to a real backend; sendSearch() is the single seam to swap.
-export function submitViaSendData(payload: unknown): void {
-  const tg = getWebApp();
-  if (!tg) {
-    // Dev fallback when opened outside Telegram.
-    console.log("[mini-app] sendData payload:", JSON.stringify(payload, null, 2));
-    return;
-  }
-  tg.sendData(JSON.stringify(payload));
+// The signed initData string, sent on every REST request as
+// X-Telegram-Init-Data (see apiClient.ts's tmaFetch) -- NEVER logged, NEVER
+// stored beyond the request that needs it (plan v2 §8).
+//
+// P3 (2026-09-01): replaces the old sendData() path entirely. sendData()
+// silently does nothing when the Mini App was launched from an inline
+// keyboard button (only the Keyboard-button launch mode supports it --
+// official Telegram behavior, confirmed live 2026-08-31; commit ca6e2cc
+// already moved every launch button to inline), so every action that used
+// to go through it -- wizard submit, toggle, delete, edit -- was silently a
+// no-op for anyone who opened the app the normal way. REST replaces it, not
+// just for the write path but structurally: it also means the app can READ
+// live state (subscriptionsStore.fetchAll) instead of only ever seeing the
+// snapshot baked into the launch URL.
+export function getInitData(): string {
+  return getWebApp()?.initData ?? "";
 }

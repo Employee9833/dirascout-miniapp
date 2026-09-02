@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { initTelegram, hapticImpact, hapticSelection } from "./lib/telegram";
 import { useWizardStore } from "./store/wizardStore";
-import { submitSearch } from "./lib/apiClient";
+import { useSubscriptionsStore } from "./store/subscriptionsStore";
 import { getLang } from "./lib/telegram";
-import type { SearchPayload, ManageItem } from "./lib/types";
+import type { SearchPayload, Subscription } from "./lib/types";
 import StepNameCity from "./components/StepNameCity";
 import StepDistricts from "./components/StepDistricts";
 import StepRanges from "./components/StepRanges";
@@ -16,21 +16,24 @@ const I18N = {
     titleEdit: "Редактировать поиск",
     next: "Далее",
     submit: "Показать варианты",
-    saved: "Готово — данные отправлены боту",
+    submitError: "Не удалось сохранить. Попробуйте ещё раз.",
+    sessionExpired: "Сессия истекла — переоткройте Mini App",
   },
   he: {
     title: "חיפוש חדש",
     titleEdit: "ערוך חיפוש",
     next: "הבא",
     submit: "הצג הצעות",
-    saved: "הנתונים נשלחו לבוט",
+    submitError: "השמירה נכשלה. נסו שוב.",
+    sessionExpired: "הסשן פג — פתחו את האפליקציה מחדש",
   },
   en: {
     title: "New search",
     titleEdit: "Edit search",
     next: "Next",
     submit: "Show options",
-    saved: "Sent to the bot",
+    submitError: "Could not save. Please try again.",
+    sessionExpired: "Session expired — reopen the Mini App",
   },
 } as const;
 
@@ -59,16 +62,6 @@ export function readPreload(): Partial<SearchPayload> | null {
   return decodeBase64Json<Partial<SearchPayload>>(raw);
 }
 
-// Parse ?action=manage&data=<base64 JSON array> (bot.py's _encode_manage_url).
-export function readManagePreload(): ManageItem[] | null {
-  const p = new URLSearchParams(window.location.search);
-  if (p.get("action") !== "manage") return null;
-  const raw = p.get("data");
-  if (!raw) return null;
-  const items = decodeBase64Json<ManageItem[]>(raw);
-  return Array.isArray(items) ? items : null;
-}
-
 export default function App() {
   const tg = initTelegram();
   const lang = getLang();
@@ -80,33 +73,64 @@ export default function App() {
   const next = useWizardStore((s) => s.next);
   const back = useWizardStore((s) => s.back);
   const loadFromPreload = useWizardStore((s) => s.loadFromPreload);
+  const resetWizard = useWizardStore((s) => s.reset);
   const toPayload = useWizardStore((s) => s.toPayload);
 
+  const fetchAll = useSubscriptionsStore((s) => s.fetchAll);
+  const createSub = useSubscriptionsStore((s) => s.create);
+  const patchSub = useSubscriptionsStore((s) => s.patch);
+  const subsSessionExpired = useSubscriptionsStore((s) => s.sessionExpired);
+
   const [nameError, setNameError] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
   // "менеджер текущих подписок тоже должен быть в приложении" -- a second
-  // top-level screen alongside the create/edit wizard, entered via its own
-  // ?action=manage preload (bot.py's _encode_manage_url). Fixed for the
-  // whole session (never toggled after mount): tapping ✏️ on a row
-  // now sends {action:"edit_open"} and closes the app instead of switching
-  // mode in place (2026-08-30 -- the manage payload stopped carrying every
-  // row's full edit fields, see ManageSubs/_encode_manage_url, so there's
-  // nothing left here to preload a wizard screen with).
-  const mode: "wizard" | "manage" =
+  // top-level screen alongside the create/edit wizard. Mutable now (2026-09-01,
+  // REST): tapping ✏️ on a manage row loads that subscription straight into
+  // the wizard store and switches here, in-app -- no bot round trip needed
+  // (GET /api/subscriptions already returned the full row, unlike the old
+  // sendData "edit_open" hop, which also silently never fired for an
+  // inline-launched app; see lib/telegram.ts's getInitData docstring).
+  // `returnToManage` remembers whether a successful wizard submit should go
+  // back to the list (edit-in-place) or close the app (a fresh launch).
+  const initialMode: "wizard" | "manage" =
     new URLSearchParams(window.location.search).get("action") === "manage" ? "manage" : "wizard";
-  const [manageItems] = useState<ManageItem[]>(() => readManagePreload() ?? []);
+  const [mode, setMode] = useState<"wizard" | "manage">(initialMode);
+  const [returnToManage, setReturnToManage] = useState(false);
 
   useEffect(() => {
-    if (mode !== "wizard") return;
+    if (initialMode === "manage") {
+      fetchAll();
+      return;
+    }
     const pre = readPreload();
     if (pre) loadFromPreload(pre);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function openEdit(item: Subscription) {
+    resetWizard();
+    loadFromPreload({ ...item, profile_id: item.id as number });
+    setReturnToManage(true);
+    setMode("wizard");
+  }
 
   // Native BackButton wiring. In manage mode there is no step to go back
   // to -- Telegram's own close/swipe already covers "leave the screen".
   useEffect(() => {
     if (!tg) return;
     const bb = tg.BackButton;
+    // Reached the wizard from the manage list (returnToManage) -- step 0's
+    // back arrow goes back to that list instead of hiding, since there IS
+    // somewhere to go back to now (unlike a fresh bot-launched wizard).
+    if (mode === "wizard" && step === 0 && returnToManage) {
+      bb.show();
+      const handler = () => {
+        hapticImpact("light");
+        setMode("manage");
+      };
+      bb.onClick(handler);
+      return () => bb.offClick(handler);
+    }
     if (mode !== "wizard" || step === 0) {
       bb.hide();
     } else {
@@ -118,7 +142,7 @@ export default function App() {
       bb.onClick(handler);
       return () => bb.offClick(handler);
     }
-  }, [tg, mode, step, back]);
+  }, [tg, mode, step, back, returnToManage]);
 
   // Native MainButton: drives Next / Submit.
   //
@@ -152,7 +176,38 @@ export default function App() {
     const handler = () => {
       hapticSelection();
       if (isFinal) {
-        submitSearch(toPayload());
+        setSubmitError(false);
+        mb.disable();
+        // toPayload()'s "action"/"profile_id" are extra, harmless keys as
+        // far as the store/API are concerned (api_server.py's own
+        // _miniapp_to_fields already allowlists specific keys and ignores
+        // the rest) -- passed through as-is rather than stripped.
+        const payload = toPayload();
+        const req =
+          action === "edit" && payload.profile_id != null
+            ? patchSub(payload.profile_id, payload)
+            : createSub(payload);
+        req.then((result) => {
+          mb.enable();
+          // create() resolves null on failure; patch() has no return value
+          // to check, so a failed patch is read off the store's own error/
+          // sessionExpired flags instead (set synchronously by the store
+          // before this .then() runs, since both are awaited promises).
+          const failed =
+            (action !== "edit" && result === null) ||
+            useSubscriptionsStore.getState().error !== null ||
+            useSubscriptionsStore.getState().sessionExpired;
+          if (failed) {
+            setSubmitError(true);
+            return;
+          }
+          if (returnToManage) {
+            setMode("manage");
+            fetchAll();
+          } else {
+            tg.close();
+          }
+        });
       } else {
         if (step === 0 && !name.trim()) {
           setNameError(true);
@@ -164,7 +219,7 @@ export default function App() {
     };
     mb.onClick(handler);
     return () => mb.offClick(handler);
-  }, [tg, mode, step, next, toPayload, name, T.submit, T.next]);
+  }, [tg, mode, step, next, toPayload, name, T.submit, T.next, action, createSub, patchSub, returnToManage, fetchAll]);
 
   const steps = [StepNameCity, StepDistricts, StepRanges, StepFinal];
   const StepComp = steps[step];
@@ -172,7 +227,7 @@ export default function App() {
   if (mode === "manage") {
     return (
       <div className="mx-auto flex min-h-full max-w-md flex-col px-4 pb-24 pt-4">
-        <ManageSubs items={manageItems} lang={lang} />
+        <ManageSubs lang={lang} onEdit={openEdit} />
       </div>
     );
   }
@@ -205,6 +260,12 @@ export default function App() {
             ? "Please enter a search name"
             : "Введите название поиска"}
         </p>
+      )}
+      {subsSessionExpired && (
+        <p className="mt-3 text-[13px] text-red-500">{T.sessionExpired}</p>
+      )}
+      {submitError && !subsSessionExpired && (
+        <p className="mt-3 text-[13px] text-red-500">{T.submitError}</p>
       )}
     </div>
   );

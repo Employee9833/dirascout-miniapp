@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, act, fireEvent } from "@testing-library/react";
-import App, { readPreload, readManagePreload } from "./App";
+import App, { readPreload } from "./App";
 import { useWizardStore } from "./store/wizardStore";
-import type { ManageItem } from "./lib/types";
+import { useSubscriptionsStore } from "./store/subscriptionsStore";
+import type { Subscription } from "./lib/types";
 
 // Minimal fake Telegram.WebApp -- records whatever handler MainButton.onClick
 // was LAST given, mirroring the real SDK's "one active handler" contract
@@ -117,77 +118,83 @@ describe("readPreload() (base64 round-trip with the bot's encoding)", () => {
   });
 });
 
-describe("readManagePreload() (bot.py's _encode_manage_url contract)", () => {
-  beforeEach(() => {
-    window.history.replaceState(null, "", "/");
-  });
-
-  const item: ManageItem = {
-    id: 5,
-    active: true,
-    editable: true,
-    summary: "🏙 Ашкелон\n💰 3000–4500 ₪",
-  };
-
-  it("returns null with no ?action=manage", () => {
-    expect(readManagePreload()).toBeNull();
-  });
-
-  it("decodes a bot-encoded array back to the original objects", () => {
-    const url = "/?action=manage&data=" + encodeLikeBot([item]);
-    window.history.replaceState(null, "", url);
-    expect(readManagePreload()).toEqual([item]);
-  });
-
-  it("a malformed data param fails closed (null)", () => {
-    window.history.replaceState(null, "", "/?action=manage&data=not-valid-base64!!!");
-    expect(readManagePreload()).toBeNull();
-  });
-
-  it("fails closed (null) if the decoded JSON isn't an array", () => {
-    const url = "/?action=manage&data=" + encodeLikeBot(item);
-    window.history.replaceState(null, "", url);
-    expect(readManagePreload()).toBeNull();
-  });
-});
-
-describe("App manage-mode switching", () => {
-  beforeEach(() => {
-    useWizardStore.getState().reset();
-    (window as any).Telegram = undefined;
-    window.history.replaceState(null, "", "/");
-  });
-
-  const item: ManageItem = {
+describe("App manage-mode (REST, 2026-09-01)", () => {
+  const sub: Subscription = {
     id: 9,
     active: false,
-    editable: true,
-    summary: "🏙 Ашдод",
+    name: "Ашдод",
+    city: "אשדוד",
+    districts: [],
+    rooms_min: null,
+    rooms_max: null,
+    price_min: null,
+    price_max: null,
+    sqm_min: null,
+    sqm_max: null,
+    floor_min: null,
+    floor_max: null,
+    mamad: "any",
+    min_quality: "partial",
+    required_fields: [],
+    deal_type: "rent_offer",
   };
 
-  it("renders the manage screen and hides MainButton when ?action=manage is present", () => {
-    const url = "/?action=manage&data=" + encodeLikeBot([item]);
-    window.history.replaceState(null, "", url);
+  beforeEach(() => {
+    useWizardStore.getState().reset();
+    useSubscriptionsStore.setState({ items: [], loading: false, error: null, sessionExpired: false });
+    (window as any).Telegram = undefined;
+    window.history.replaceState(null, "", "/");
+    vi.restoreAllMocks();
+  });
+
+  it("fetches live subscriptions (not a URL preload) and hides MainButton when ?action=manage is present", async () => {
+    window.history.replaceState(null, "", "/?action=manage");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [sub] }) }),
+    );
     const { tg } = makeFakeTg();
     tg.initDataUnsafe = { user: { language_code: "ru" } };
     (window as any).Telegram = { WebApp: tg };
-    const { getByText } = render(<App />);
-    expect(getByText("🏙 Ашдод", { exact: false })).toBeTruthy();
+    const { findByText } = render(<App />);
+    await findByText("Ашдод", { exact: false });
     expect(tg.MainButton.hide).toHaveBeenCalled();
   });
 
-  it("tapping edit on a manage row sends {action:'edit_open'} instead of switching mode locally", () => {
-    const url = "/?action=manage&data=" + encodeLikeBot([item]);
-    window.history.replaceState(null, "", url);
+  it("tapping edit on a manage row loads it into the wizard and switches mode in-app (no sendData)", async () => {
+    window.history.replaceState(null, "", "/?action=manage");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [sub] }) }),
+    );
     const { tg } = makeFakeTg();
     tg.initDataUnsafe = { user: { language_code: "ru" } };
     (window as any).Telegram = { WebApp: tg };
-    const { getByText } = render(<App />);
+    const { findByText, getByText } = render(<App />);
+    await findByText("Ашдод", { exact: false });
     act(() => {
       fireEvent.click(getByText("✏️ Изменить"));
     });
-    expect(tg.sendData).toHaveBeenCalledWith(JSON.stringify({ action: "edit_open", profile_id: 9 }));
-    // No local wizard state change -- edit is now a bot round trip, not an in-app mode switch.
-    expect(useWizardStore.getState().action).toBe("new");
+    expect((tg as any).sendData).not.toHaveBeenCalled();
+    expect(useWizardStore.getState().action).toBe("edit");
+    expect(useWizardStore.getState().name).toBe("Ашдод");
+    expect(useWizardStore.getState().profile_id).toBe(9);
+  });
+
+  it("BackButton at step 0 returns to the manage list, not hidden, after an in-app edit", async () => {
+    window.history.replaceState(null, "", "/?action=manage");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [sub] }) }),
+    );
+    const { tg } = makeFakeTg();
+    tg.initDataUnsafe = { user: { language_code: "ru" } };
+    (window as any).Telegram = { WebApp: tg };
+    const { findByText, getByText } = render(<App />);
+    await findByText("Ашдод", { exact: false });
+    act(() => {
+      fireEvent.click(getByText("✏️ Изменить"));
+    });
+    expect(tg.BackButton.show).toHaveBeenCalled();
   });
 });

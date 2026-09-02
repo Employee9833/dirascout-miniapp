@@ -1,43 +1,57 @@
-// Network layer — PREPARED for a future backend, not yet wired to one.
-//
-// Today the Mini App delivers the search via Telegram's sendData() straight to
-// the bot (see lib/telegram.ts -> submitViaSendData). This module is the seam:
-// when a real API exists, implement submitSearch() with the fetch below and
-// stop calling submitViaSendData. The initData interceptor is already correct
-// per the spec (Authorization: Bearer <initData> on every request).
+// REST client for the Mini App API (plan v2 §5). Every request carries the
+// signed initData as X-Telegram-Init-Data; auth is header-based, not
+// cookie-based, so `credentials: "include"` is deliberately NOT set --
+// cross-origin cookies would additionally require
+// Access-Control-Allow-Credentials plus a non-wildcard origin on the server
+// for no benefit here (see docs/plan-miniapp-api.md §5's own note).
 
-import { getWebApp, submitViaSendData } from "./telegram";
-import type { SearchPayload } from "./types";
+import { getInitData } from "./telegram";
 
-function initData(): string {
-  return getWebApp()?.initData ?? "";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+
+// Thrown on a 401 response -- callers (subscriptionsStore) turn this into a
+// "session expired" UI state rather than treating it like any other error,
+// since the fix is "reopen the Mini App", not "retry the request".
+export class UnauthorizedError extends Error {
+  readonly name = "Unauthorized";
 }
 
-export interface ApiClient {
-  submitSearch: (payload: SearchPayload) => Promise<void>;
-}
-
-/**
- * Future backend client. Unused until a server exists.
- * Sends initData as a Bearer token so the backend can verify the user.
- */
-export async function postSearchToBackend(payload: SearchPayload): Promise<void> {
-  const token = initData();
-  const res = await fetch("/api/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    throw new Error(`Search submit failed: ${res.status}`);
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
   }
 }
 
-// Current active submit: Telegram sendData -> bot. Kept here so the seam is
-// one place. Swap to postSearchToBackend() once the backend is live.
-export function submitSearch(payload: SearchPayload): void {
-  submitViaSendData(payload);
+/** fetch() with the auth header attached and a JSON Content-Type default for
+ * bodied requests. Never throws on a non-2xx status -- apiRequest() below
+ * is what turns that into a typed error; this stays a thin fetch wrapper so
+ * it is also usable directly (e.g. a caller that wants the raw Response). */
+export function tmaFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("X-Telegram-Init-Data", getInitData());
+  if (init.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  return fetch(`${API_BASE}${input}`, { ...init, headers });
+}
+
+/** JSON in, JSON out, typed. 401 -> UnauthorizedError; any other non-2xx ->
+ * ApiError carrying the status and the server's plain-text/JSON detail. */
+export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await tmaFetch(path, init);
+  if (res.status === 401) {
+    throw new UnauthorizedError("session expired");
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = (await res.text()) || detail;
+    } catch {
+      // body already consumed or unreadable -- statusText is enough
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as T;
 }
