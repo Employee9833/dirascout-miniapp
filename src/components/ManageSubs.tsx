@@ -98,6 +98,21 @@ export default function ManageSubs({
     return <p className="text-[14px] text-muted">…</p>;
   }
 
+  // A failed fetch (network/CSP block, 5xx, ...) must not read as "no
+  // subscriptions yet" -- items being empty because nothing loaded is a
+  // completely different situation from items being empty because there
+  // is genuinely nothing there, and conflating them hid a real CSP
+  // connect-src block behind a misleading empty state (found live,
+  // 2026-09-02: fetchAll() was silently failing and this screen showed
+  // the empty-state text instead of the fetch error).
+  if (error && items.length === 0) {
+    return (
+      <p className="text-[14px] text-red-500" onClick={clearError}>
+        {error}
+      </p>
+    );
+  }
+
   if (items.length === 0) {
     return <p className="text-[14px] text-muted">{T.empty}</p>;
   }

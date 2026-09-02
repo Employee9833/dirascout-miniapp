@@ -60,6 +60,18 @@ describe("ManageSubs", () => {
     expect(queryByText("Подписок пока нет.")).toBeNull();
   });
 
+  it("a failed fetch (error set, items still empty) shows the error, not the empty state", () => {
+    // Regression, found live 2026-09-02: a CSP connect-src block made every
+    // fetch() throw, items stayed [], and this screen showed "no
+    // subscriptions yet" instead of the actual error -- indistinguishable
+    // from a genuinely empty account, which sent debugging in the wrong
+    // direction entirely.
+    useSubscriptionsStore.setState({ error: "Failed to fetch" });
+    const { getByText, queryByText } = render(<ManageSubs lang="ru" onEdit={vi.fn()} />);
+    expect(getByText("Failed to fetch")).toBeTruthy();
+    expect(queryByText("Подписок пока нет.")).toBeNull();
+  });
+
   it("toggle flips active optimistically and POSTs /toggle", async () => {
     seedStore([makeItem()]);
     const fetchMock = vi
