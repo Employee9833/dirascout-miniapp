@@ -124,27 +124,34 @@ export default function App() {
   const [mode, setMode] = useState<"wizard" | "manage">(initialMode);
   const [returnToManage, setReturnToManage] = useState(false);
 
-  // The Mini App now opens ON the user's ONE main filter (2026-09-04:
-  // "сделать один фильтр основной"), not on a blank create form. So a plain
-  // launch fetches the existing subscriptions and loads the first real one
-  // into the hub as an edit; only a user with none at all starts empty, and
-  // their first save creates it. `?action=edit&data=` (the bot's deep link)
-  // still wins when present -- it names a SPECIFIC profile.
+  // What the launch URL asks for, decided once. The bot builds four
+  // distinct entry points and they are NOT interchangeable:
+  //   ?action=new    -> a blank create form (the "＋ новый поиск" button)
+  //   ?action=edit   -> that ONE profile, preloaded from the deep link
+  //   ?action=manage -> the subscriptions list
+  //   (no action)    -> the user's one main filter (2026-09-04)
   //
-  // The personal City profile is skipped as a candidate: it is generated and
-  // owned by the bot (matching.CITY_PROFILE_NAME), the API refuses Mini App
-  // writes to it, and offering it as "your main filter" would put the user
-  // in a form whose every save is rejected.
+  // Found live 2026-09-04, immediately after shipping the hub: only `manage`
+  // and `edit` were checked, so `?action=new` fell through to the main-filter
+  // branch and silently opened the user's EXISTING search instead. Creating a
+  // second search became impossible -- every attempt edited the first one.
+  const launchAction = new URLSearchParams(window.location.search).get("action");
+
   useEffect(() => {
     if (initialMode === "manage") {
       fetchAll();
       return;
     }
+    if (launchAction === "new") return;   // blank form, load nothing
     const pre = readPreload();
     if (pre) {
       loadFromPreload(pre);
       return;
     }
+    // A bare launch opens the main filter: the first profile that is not the
+    // bot-owned personal City one (matching.CITY_PROFILE_NAME), which the API
+    // refuses Mini App writes to -- offering it here would put the user in a
+    // form whose every save is rejected.
     fetchAll().then(() => {
       const items = useSubscriptionsStore.getState().items;
       const main = items.find((i) => i.name !== CITY_PROFILE_NAME);

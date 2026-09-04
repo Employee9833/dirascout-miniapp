@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, act, fireEvent } from "@testing-library/react";
+import { render, act, fireEvent, waitFor } from "@testing-library/react";
 import App, { readPreload } from "./App";
 import { useWizardStore } from "./store/wizardStore";
 import { useSubscriptionsStore } from "./store/subscriptionsStore";
 import type { Subscription } from "./lib/types";
+import { CITY_PROFILE_NAME } from "./lib/types";
 
 // Minimal fake Telegram.WebApp -- records whatever handler MainButton.onClick
 // was LAST given, mirroring the real SDK's "one active handler" contract
@@ -131,6 +132,61 @@ describe("App hub MainButton (stale-closure guard, 2026-08-29 / reshaped 2026-09
     expect(posted.length).toBeGreaterThan(0);
     const body = posted[posted.length - 1];
     expect(String(body.payload.name).trim()).not.toBe("");
+  });
+});
+
+
+// Regression, found live 2026-09-04 minutes after the hub shipped: the mount
+// effect knew ?action=manage and ?action=edit but not ?action=new, so the
+// bot's "новый поиск" button fell through to the main-filter branch and
+// opened the EXISTING search. Creating a second one became impossible.
+describe("App launch actions (?action=new must not preload)", () => {
+  const existing: Subscription = {
+    id: 5, active: true, name: "Уже есть", city: "אשקלון", districts: ["אפרידר"],
+    rooms_min: 3, rooms_max: null, price_min: null, price_max: 4000,
+    sqm_min: null, sqm_max: null, floor_min: null, floor_max: null,
+    mamad: "any", min_quality: "partial", required_fields: [], deal_type: "rent_offer",
+  };
+
+  beforeEach(() => {
+    useWizardStore.getState().reset();
+    useSubscriptionsStore.setState({ items: [], loading: false, error: null, sessionExpired: false });
+    (window as any).Telegram = undefined;
+    window.history.replaceState(null, "", "/");
+    vi.restoreAllMocks();
+  });
+
+  it("?action=new starts blank even when the user already has a search", async () => {
+    window.history.replaceState(null, "", "/?action=new");
+    mockApi({ items: [existing] });
+    const { tg } = makeFakeTg();
+    (window as any).Telegram = { WebApp: tg };
+    render(<App />);
+    await act(async () => { await Promise.resolve(); });
+    const st = useWizardStore.getState();
+    expect(st.profile_id).toBeNull();
+    expect(st.action).toBe("new");
+    expect(st.city).toBeNull();
+    expect(st.price_max).toBeNull();
+  });
+
+  it("a bare launch (no action) still opens the existing main filter", async () => {
+    mockApi({ items: [existing] });
+    const { tg } = makeFakeTg();
+    (window as any).Telegram = { WebApp: tg };
+    render(<App />);
+    await waitFor(() => expect(useWizardStore.getState().profile_id).toBe(5));
+    expect(useWizardStore.getState().action).toBe("edit");
+    expect(useWizardStore.getState().price_max).toBe(4000);
+  });
+
+  it("the bot-owned City profile is never adopted as the main filter", async () => {
+    mockApi({ items: [{ ...existing, id: 9, name: CITY_PROFILE_NAME }] });
+    const { tg } = makeFakeTg();
+    (window as any).Telegram = { WebApp: tg };
+    render(<App />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(useWizardStore.getState().profile_id).toBeNull();
   });
 });
 
