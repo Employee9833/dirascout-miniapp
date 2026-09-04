@@ -60,7 +60,14 @@ function RadioRow<T extends string>({
   );
 }
 
-export default function StepFinal() {
+// `only` splits this into the two panes the hub links to (2026-09-04):
+// "mamad" is a single question a user changes often, "quality" bundles the
+// two precision controls that are genuinely one topic (min_quality decides
+// whether an unknown field still notifies, required_fields decides whether
+// it is excluded outright -- explaining either without the other is what
+// the long hint text below already had to do). Undefined renders both, so
+// nothing else that mounts this component changes.
+export default function StepFinal({ only }: { only?: "mamad" | "quality" } = {}) {
   const lang = getLang();
   const mamad = useWizardStore((s) => s.mamad);
   const min_quality = useWizardStore((s) => s.min_quality);
@@ -72,12 +79,15 @@ export default function StepFinal() {
 
   return (
     <div className="space-y-4">
-      <RadioRow
-        title={lang === "he" ? "ממ״ד" : lang === "en" ? "Safe room (mamad)" : "Мамад"}
-        opts={MAMAD}
-        value={mamad}
-        onChange={(v) => set("mamad", v)}
-      />
+      {only !== "quality" && (
+        <RadioRow
+          title={lang === "he" ? "ממ״ד" : lang === "en" ? "Safe room (mamad)" : "Мамад"}
+          opts={MAMAD}
+          value={mamad}
+          onChange={(v) => set("mamad", v)}
+        />
+      )}
+      {only === "mamad" ? null : <>
       <RadioRow
         title={lang === "he" ? "דיוק" : lang === "en" ? "Match quality" : "Точность"}
         opts={QUALITY}
@@ -124,6 +134,7 @@ export default function StepFinal() {
           })}
         </div>
       </div>
+      </>}
     </div>
   );
 }

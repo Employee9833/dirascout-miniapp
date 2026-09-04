@@ -4,34 +4,50 @@ import { useWizardStore } from "./store/wizardStore";
 import { useSubscriptionsStore } from "./store/subscriptionsStore";
 import { getLang } from "./lib/telegram";
 import type { SearchPayload, Subscription } from "./lib/types";
-import StepNameCity from "./components/StepNameCity";
-import StepDistricts from "./components/StepDistricts";
+import { CITY_PROFILE_NAME } from "./lib/types";
 import StepRanges from "./components/StepRanges";
 import StepFinal from "./components/StepFinal";
 import ManageSubs from "./components/ManageSubs";
+import Hub from "./components/Hub";
+import LocationPane from "./components/LocationPane";
+import type { PaneKey } from "./store/wizardStore";
+
+// Which editor each hub row opens, and what the header says while it is
+// open. The editors are the ORIGINAL wizard step components, each narrowed
+// by its own `only` prop -- the hub replaced the navigation between them,
+// not the fields themselves.
+const PANES: Record<PaneKey, { node: () => JSX.Element; title: Record<"ru" | "he" | "en", string> }> = {
+  location: { node: () => <LocationPane />, title: { ru: "Локация", he: "מיקום", en: "Location" } },
+  price: { node: () => <StepRanges only="price" />, title: { ru: "Цена", he: "מחיר", en: "Price" } },
+  rooms: { node: () => <StepRanges only="rooms" />, title: { ru: "Комнаты", he: "חדרים", en: "Rooms" } },
+  sqm: { node: () => <StepRanges only="sqm" />, title: { ru: "Площадь", he: "שטח", en: "Area" } },
+  floor: { node: () => <StepRanges only="floor" />, title: { ru: "Этаж", he: "קומה", en: "Floor" } },
+  mamad: { node: () => <StepFinal only="mamad" />, title: { ru: "Мамад", he: 'ממ"ד', en: "Safe room" } },
+  quality: { node: () => <StepFinal only="quality" />, title: { ru: "Точность", he: "דיוק", en: "Match quality" } },
+};
 
 const I18N = {
   ru: {
     title: "Новый поиск",
     titleEdit: "Редактировать поиск",
-    next: "Далее",
-    submit: "Показать варианты",
+    done: "Готово",
+    submit: "Сохранить поиск",
     submitError: "Не удалось сохранить. Попробуйте ещё раз.",
     sessionExpired: "Сессия истекла — переоткройте Mini App",
   },
   he: {
     title: "חיפוש חדש",
     titleEdit: "ערוך חיפוש",
-    next: "הבא",
-    submit: "הצג הצעות",
+    done: "סיום",
+    submit: "שמור חיפוש",
     submitError: "השמירה נכשלה. נסו שוב.",
     sessionExpired: "הסשן פג — פתחו את האפליקציה מחדש",
   },
   en: {
     title: "New search",
     titleEdit: "Edit search",
-    next: "Next",
-    submit: "Show options",
+    done: "Done",
+    submit: "Save search",
     submitError: "Could not save. Please try again.",
     sessionExpired: "Session expired — reopen the Mini App",
   },
@@ -67,11 +83,11 @@ export default function App() {
   const lang = getLang();
   const T = I18N[lang];
 
-  const step = useWizardStore((s) => s.step);
+  const pane = useWizardStore((s) => s.pane);
   const action = useWizardStore((s) => s.action);
   const name = useWizardStore((s) => s.name);
-  const next = useWizardStore((s) => s.next);
-  const back = useWizardStore((s) => s.back);
+  const openPane = useWizardStore((s) => s.openPane);
+  const closePane = useWizardStore((s) => s.closePane);
   const loadFromPreload = useWizardStore((s) => s.loadFromPreload);
   const resetWizard = useWizardStore((s) => s.reset);
   const toPayload = useWizardStore((s) => s.toPayload);
@@ -81,7 +97,6 @@ export default function App() {
   const patchSub = useSubscriptionsStore((s) => s.patch);
   const subsSessionExpired = useSubscriptionsStore((s) => s.sessionExpired);
 
-  const [nameError, setNameError] = useState(false);
   // Holds the actual server/network message, not a boolean -- a generic
   // "could not save, try again" (found live 2026-09-02) told the user
   // nothing when the real reason was e.g. "«rooms_min»/«rooms_max»: от не
@@ -109,13 +124,32 @@ export default function App() {
   const [mode, setMode] = useState<"wizard" | "manage">(initialMode);
   const [returnToManage, setReturnToManage] = useState(false);
 
+  // The Mini App now opens ON the user's ONE main filter (2026-09-04:
+  // "сделать один фильтр основной"), not on a blank create form. So a plain
+  // launch fetches the existing subscriptions and loads the first real one
+  // into the hub as an edit; only a user with none at all starts empty, and
+  // their first save creates it. `?action=edit&data=` (the bot's deep link)
+  // still wins when present -- it names a SPECIFIC profile.
+  //
+  // The personal City profile is skipped as a candidate: it is generated and
+  // owned by the bot (matching.CITY_PROFILE_NAME), the API refuses Mini App
+  // writes to it, and offering it as "your main filter" would put the user
+  // in a form whose every save is rejected.
   useEffect(() => {
     if (initialMode === "manage") {
       fetchAll();
       return;
     }
     const pre = readPreload();
-    if (pre) loadFromPreload(pre);
+    if (pre) {
+      loadFromPreload(pre);
+      return;
+    }
+    fetchAll().then(() => {
+      const items = useSubscriptionsStore.getState().items;
+      const main = items.find((i) => i.name !== CITY_PROFILE_NAME);
+      if (main) loadFromPreload({ ...main, profile_id: main.id as number });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -138,122 +172,105 @@ export default function App() {
     setMode("wizard");
   }
 
-  // Native BackButton wiring. In manage mode there is no step to go back
-  // to -- Telegram's own close/swipe already covers "leave the screen".
+  // Native BackButton wiring. Three destinations, most specific first:
+  // an open pane goes back to the hub; a hub reached FROM the manage list
+  // goes back to that list; anything else has nowhere to go and hides it
+  // (Telegram's own close/swipe already covers "leave the screen").
   useEffect(() => {
     if (!tg) return;
     const bb = tg.BackButton;
-    // Reached the wizard from the manage list (returnToManage) -- step 0's
-    // back arrow goes back to that list instead of hiding, since there IS
-    // somewhere to go back to now (unlike a fresh bot-launched wizard).
-    if (mode === "wizard" && step === 0 && returnToManage) {
-      bb.show();
-      const handler = () => {
-        hapticImpact("light");
-        setMode("manage");
-      };
-      bb.onClick(handler);
-      return () => bb.offClick(handler);
+    let handler: (() => void) | null = null;
+    if (mode === "wizard" && pane !== null) {
+      handler = () => { hapticImpact("light"); closePane(); };
+    } else if (mode === "wizard" && returnToManage) {
+      handler = () => { hapticImpact("light"); setMode("manage"); };
     }
-    if (mode !== "wizard" || step === 0) {
+    if (!handler) {
       bb.hide();
-    } else {
-      bb.show();
-      const handler = () => {
-        hapticImpact("light");
-        back();
-      };
-      bb.onClick(handler);
-      return () => bb.offClick(handler);
+      return;
     }
-  }, [tg, mode, step, back, returnToManage]);
+    bb.show();
+    const h = handler;
+    bb.onClick(h);
+    return () => bb.offClick(h);
+  }, [tg, mode, pane, closePane, returnToManage]);
 
-  // Native MainButton: drives Next / Submit.
+  // Native MainButton: "Готово" closes an open pane, "Сохранить" submits
+  // from the hub.
   //
-  // `name` MUST be in the deps array (found in review, confirmed with a
-  // failing test before this fix): tg.MainButton.onClick registers a plain
-  // JS callback with Telegram's native SDK, not a React element -- it holds
-  // whatever closure `handler` had at the moment this effect last ran, and
-  // that only happens when a LISTED dep changes. Without `name` here, the
-  // handler keeps referencing whatever `name` was when the user first
-  // landed on step 0 (usually "") for as long as `step`/`tg` don't change --
-  // typing into the name field never re-runs this effect, so the check on
-  // line ~106 always saw the STALE value. In practice this made "Далее"
-  // permanently reject step 0 for anyone who typed a name normally (type,
-  // then tap), a real showstopper for the new-profile flow, and the same
-  // stale check runs on an edit's preloaded name too (loadFromPreload sets
-  // `name` in a separate effect that also doesn't retrigger this one).
+  // `name` MUST be in the deps array (found in review 2026-08-29, confirmed
+  // with a failing test before the fix): tg.MainButton.onClick registers a
+  // plain JS callback with Telegram's native SDK, not a React element -- it
+  // holds whatever closure `handler` had when this effect last ran, and that
+  // only happens when a LISTED dep changes. Typing into the name field does
+  // not re-run this effect, so without `name` here the empty-name check
+  // below reads a stale "" forever and save is rejected for everyone who
+  // typed a name normally. Still true on the hub, where the name now lives
+  // behind its own pane.
   useEffect(() => {
     if (!tg) return;
-    // Manage mode has no single Next/Submit action -- each row's own
-    // buttons act immediately (see ManageSubs), so the native MainButton
-    // has nothing to drive here.
+    // Manage mode has no single action -- each row's own buttons act
+    // immediately (see ManageSubs), so the MainButton has nothing to drive.
     if (mode !== "wizard") {
       tg.MainButton.hide();
       return;
     }
     const mb = tg.MainButton;
-    const isFinal = step === 3;
-    mb.setText(isFinal ? T.submit : T.next);
+    const inPane = pane !== null;
+    mb.setText(inPane ? T.done : T.submit);
     mb.show();
     mb.enable();
     const handler = () => {
       hapticSelection();
-      if (isFinal) {
-        if (submitting.current) return;
-        submitting.current = true;
-        setSubmitError(null);
-        mb.disable();
-        // toPayload()'s "action"/"profile_id" are extra, harmless keys as
-        // far as the store/API are concerned (api_server.py's own
-        // _miniapp_to_fields already allowlists specific keys and ignores
-        // the rest) -- passed through as-is rather than stripped.
-        const payload = toPayload();
-        const req =
-          action === "edit" && payload.profile_id != null
-            ? patchSub(payload.profile_id, payload)
-            : createSub(payload);
-        req.then((result) => {
-          submitting.current = false;
-          mb.enable();
-          // create() resolves null on failure; patch() has no return value
-          // to check, so a failed patch is read off the store's own error/
-          // sessionExpired flags instead (set synchronously by the store
-          // before this .then() runs, since both are awaited promises).
-          // Both failure paths always set `error` before resolving (see
-          // subscriptionsStore's catch blocks), UNLESS it was a 401 --
-          // that's `subsSessionExpired`, already shown as its own message.
-          const storeError = useSubscriptionsStore.getState().error;
-          const failed =
-            (action !== "edit" && result === null) ||
-            storeError !== null ||
-            useSubscriptionsStore.getState().sessionExpired;
-          if (failed) {
-            setSubmitError(storeError ?? T.submitError);
-            return;
-          }
-          if (returnToManage) {
-            setMode("manage");
-            fetchAll();
-          } else {
-            tg.close();
-          }
-        });
-      } else {
-        if (step === 0 && !name.trim()) {
-          setNameError(true);
+      if (inPane) {
+        closePane();
+        return;
+      }
+      // No empty-name gate any more: the user never types a name, and
+      // toPayload() derives one from the criteria (see the store's
+      // autoName). The API still requires a non-empty one.
+      if (submitting.current) return;
+      submitting.current = true;
+      setSubmitError(null);
+      mb.disable();
+      // toPayload()'s "action"/"profile_id" are extra, harmless keys as far
+      // as the store/API are concerned (_miniapp_to_fields allowlists
+      // specific keys and ignores the rest) -- passed through as-is.
+      const payload = toPayload();
+      const req =
+        action === "edit" && payload.profile_id != null
+          ? patchSub(payload.profile_id, payload)
+          : createSub(payload);
+      req.then((result) => {
+        submitting.current = false;
+        mb.enable();
+        // create() resolves null on failure; patch() has no return value to
+        // check, so a failed patch is read off the store's own error/
+        // sessionExpired flags instead (set synchronously before this
+        // .then() runs, since both are awaited promises). Both failure
+        // paths always set `error` before resolving, UNLESS it was a 401 --
+        // that is `subsSessionExpired`, shown as its own message.
+        const storeError = useSubscriptionsStore.getState().error;
+        const failed =
+          (action !== "edit" && result === null) ||
+          storeError !== null ||
+          useSubscriptionsStore.getState().sessionExpired;
+        if (failed) {
+          setSubmitError(storeError ?? T.submitError);
           return;
         }
-        setNameError(false);
-        next();
-      }
+        if (returnToManage) {
+          setMode("manage");
+          fetchAll();
+        } else {
+          tg.close();
+        }
+      });
     };
     mb.onClick(handler);
     return () => mb.offClick(handler);
-  }, [tg, mode, step, next, toPayload, name, T.submit, T.next, action, createSub, patchSub, returnToManage, fetchAll]);
-
-  const steps = [StepNameCity, StepDistricts, StepRanges, StepFinal];
-  const StepComp = steps[step];
+  }, [tg, mode, pane, closePane, toPayload, name, T.submit, T.done, T.submitError,
+      action, createSub, patchSub, returnToManage, fetchAll]);
 
   if (mode === "manage") {
     return (
@@ -263,41 +280,26 @@ export default function App() {
     );
   }
 
+  const active = pane !== null ? PANES[pane] : null;
+
   return (
-    <div className="mx-auto flex min-h-full max-w-md flex-col px-4 pb-24 pt-4">
-      <header className="mb-4">
+    <div className="mx-auto flex min-h-full max-w-md flex-col pb-24 pt-4">
+      <header className="mb-4 px-4">
         <h1 className="text-xl font-semibold">
-          {action === "edit" ? T.titleEdit : T.title}
+          {active ? active.title[lang] : action === "edit" ? T.titleEdit : T.title}
         </h1>
-        <div className="mt-2 flex gap-1">
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className={`h-1 flex-1 rounded-full ${
-                i <= step ? "bg-accent" : "bg-line"
-              }`}
-            />
-          ))}
-        </div>
       </header>
-      <main className="flex-1">
-        <StepComp />
+      <main className={`flex-1 ${active ? "px-4" : ""}`}>
+        {active ? active.node() : <Hub onOpen={openPane} />}
       </main>
-      {nameError && (
-        <p className="mt-3 text-[13px] text-red-500">
-          {lang === "he"
-            ? "נא להזין שם לחיפוש"
-            : lang === "en"
-            ? "Please enter a search name"
-            : "Введите название поиска"}
-        </p>
-      )}
+      <div className="px-4">
       {subsSessionExpired && (
         <p className="mt-3 text-[13px] text-red-500">{T.sessionExpired}</p>
       )}
       {submitError && !subsSessionExpired && (
         <p className="mt-3 text-[13px] text-red-500">{submitError}</p>
       )}
+      </div>
     </div>
   );
 }

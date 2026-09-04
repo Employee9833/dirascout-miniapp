@@ -21,10 +21,16 @@ const DEFS: RangeDef[] = [
   { key: "floor", icon: "🏢", label: { ru: "Этаж", he: "קומה", en: "Floor" }, step: "1", min: "floor_min", max: "floor_max" },
 ];
 
-export default function StepRanges() {
+// `only` narrows this to a single range, so the hub can reuse it verbatim
+// as a one-field pane (2026-09-04). The component already mapped over DEFS;
+// filtering that array is the whole change -- the inputs, the null handling
+// and the "empty = no limit" hint are shared with the full-list rendering
+// rather than duplicated per field.
+export default function StepRanges({ only }: { only?: RangeDef["key"] } = {}) {
   const lang = getLang();
   const set = useWizardStore((s) => s.set);
   const vals = useWizardStore((s) => s);
+  const defs = only ? DEFS.filter((d) => d.key === only) : DEFS;
 
   const labels =
     lang === "he"
@@ -35,7 +41,7 @@ export default function StepRanges() {
 
   return (
     <div className="space-y-4">
-      {DEFS.map((d) => (
+      {defs.map((d) => (
         <div key={d.key} className="card">
           <label className="label">{d.icon} {d.label[lang]}</label>
           <div className="grid grid-cols-2 gap-3">

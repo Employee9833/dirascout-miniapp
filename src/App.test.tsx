@@ -48,41 +48,89 @@ function encodeLikeBot(data: unknown): string {
   return encodeURIComponent(b64);
 }
 
-describe("App MainButton stale-closure (2026-08-29 review)", () => {
+// The four-step wizard became a hub-and-spoke settings screen (2026-09-04),
+// so "does Далее advance the step" no longer describes anything. What
+// survives from the original stale-closure regression is the reason it
+// existed: MainButton.onClick holds the closure from the last effect run,
+// so any value the handler READS must be in the deps array. On the hub that
+// value is the payload it submits.
+
+// The hub launches by fetching the user's subscriptions (App.tsx's mount
+// effect) and then previews a count, so a single blanket fetch mock no
+// longer describes reality -- it would answer GET /api/subscriptions with a
+// create response and leave the store's `items` undefined. Route by URL and
+// method instead, and let each test say only what it cares about.
+// Bodies of the WRITE calls only -- the hub also fires GET /api/subscriptions
+// on mount and POST /api/preview for its counter, and neither is what a
+// "did it submit?" assertion is about.
+function postBodies(fetchMock: ReturnType<typeof vi.fn>): any[] {
+  return fetchMock.mock.calls
+    .filter(([url, init]: any) =>
+      !String(url).includes("/api/preview") &&
+      (init?.method === "POST" || init?.method === "PATCH"))
+    .map(([, init]: any) => JSON.parse(String(init.body)));
+}
+
+function mockApi(over: {
+  items?: unknown[];
+  create?: { ok?: boolean; status?: number; body?: unknown };
+} = {}) {
+  const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes("/api/preview")) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ count: 0, exact: 0, days: 30 }) });
+    }
+    if (init?.method === "POST" || init?.method === "PATCH") {
+      const c = over.create ?? {};
+      return Promise.resolve({
+        ok: c.ok ?? true, status: c.status ?? 201,
+        json: async () => c.body ?? { id: 1, active: true },
+      });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: over.items ?? [] }) });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+describe("App hub MainButton (stale-closure guard, 2026-08-29 / reshaped 2026-09-04)", () => {
   beforeEach(() => {
     useWizardStore.getState().reset();
+    useSubscriptionsStore.setState({ items: [], loading: false, error: null, sessionExpired: false });
     (window as any).Telegram = undefined;
     window.history.replaceState(null, "", "/");
+    vi.restoreAllMocks();
   });
 
-  it("must advance past step 0 after typing a name (not the value from mount)", () => {
+  it("submits the criteria as they are NOW, not as they were at mount", async () => {
+    const fetchMock = mockApi();
     const { tg, clickMain } = makeFakeTg();
     (window as any).Telegram = { WebApp: tg };
     render(<App />);
+    await act(async () => { await Promise.resolve(); });
     act(() => {
-      useWizardStore.getState().set("name", "Тестовый поиск");
+      useWizardStore.getState().set("city", "אשקלון");
+      useWizardStore.getState().set("price_max", 4800);
     });
     act(() => { clickMain(); });
-    expect(useWizardStore.getState().step).toBe(1);
+    const posted = postBodies(fetchMock);
+    expect(posted.length).toBeGreaterThan(0);
+    const body = posted[posted.length - 1];
+    expect(body.payload.price_max).toBe(4800);
+    expect(body.payload.city).toBe("אשקלון");
   });
 
-  it("an edit's preloaded name must not be rejected as empty either", () => {
-    const url = "/?action=edit&pid=7&data=" + encodeLikeBot({ name: "Старый поиск" });
-    window.history.replaceState(null, "", url);
+  it("an empty search still submits -- the name is auto-derived, not typed", async () => {
+    const fetchMock = mockApi();
     const { tg, clickMain } = makeFakeTg();
     (window as any).Telegram = { WebApp: tg };
     render(<App />);
-    expect(useWizardStore.getState().name).toBe("Старый поиск"); // preload itself worked
+    await act(async () => { await Promise.resolve(); });
     act(() => { clickMain(); });
-    expect(useWizardStore.getState().step).toBe(1); // and MainButton saw it too
-  });
-
-  it("still rejects a genuinely empty name (not a blanket bypass)", () => {
-    const { tg, clickMain } = makeFakeTg();
-    (window as any).Telegram = { WebApp: tg };
-    render(<App />);
-    act(() => { clickMain(); });
-    expect(useWizardStore.getState().step).toBe(0);
+    const posted = postBodies(fetchMock);
+    expect(posted.length).toBeGreaterThan(0);
+    const body = posted[posted.length - 1];
+    expect(String(body.payload.name).trim()).not.toBe("");
   });
 });
 
@@ -149,10 +197,7 @@ describe("App manage-mode (REST, 2026-09-01)", () => {
 
   it("fetches live subscriptions (not a URL preload) and hides MainButton when ?action=manage is present", async () => {
     window.history.replaceState(null, "", "/?action=manage");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [sub] }) }),
-    );
+    mockApi({ items: [sub] });
     const { tg } = makeFakeTg();
     tg.initDataUnsafe = { user: { language_code: "ru" } };
     (window as any).Telegram = { WebApp: tg };
@@ -163,10 +208,7 @@ describe("App manage-mode (REST, 2026-09-01)", () => {
 
   it("tapping edit on a manage row loads it into the wizard and switches mode in-app (no sendData)", async () => {
     window.history.replaceState(null, "", "/?action=manage");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [sub] }) }),
-    );
+    mockApi({ items: [sub] });
     const { tg } = makeFakeTg();
     tg.initDataUnsafe = { user: { language_code: "ru" } };
     (window as any).Telegram = { WebApp: tg };
@@ -183,10 +225,7 @@ describe("App manage-mode (REST, 2026-09-01)", () => {
 
   it("BackButton at step 0 returns to the manage list, not hidden, after an in-app edit", async () => {
     window.history.replaceState(null, "", "/?action=manage");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [sub] }) }),
-    );
+    mockApi({ items: [sub] });
     const { tg } = makeFakeTg();
     tg.initDataUnsafe = { user: { language_code: "ru" } };
     (window as any).Telegram = { WebApp: tg };
@@ -218,12 +257,16 @@ describe("App: double-tap guard on submit (2026-09-02 audit)", () => {
     (window as any).Telegram = { WebApp: tg };
     render(<App />);
     act(() => {
-      useWizardStore.getState().set("name", "Тест");
-      useWizardStore.getState().goTo(3);
+      useWizardStore.getState().set("city", "אשקלון");
     });
     act(() => { clickMain(); }); // first tap -- in flight, never resolved yet
     act(() => { clickMain(); }); // second tap while the first is still pending
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The hub also fetches on mount and previews its counter, so count the
+    // WRITE calls specifically rather than every fetch.
+    const writes = fetchMock.mock.calls.filter(
+      ([url, init]: any) => !String(url).includes("/api/preview") &&
+        (init?.method === "POST" || init?.method === "PATCH"));
+    expect(writes.length).toBe(1);
     await act(async () => {
       resolveFetch({ ok: true, status: 201, json: async () => ({ id: 1, active: true }) });
       await Promise.resolve();

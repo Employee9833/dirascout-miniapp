@@ -87,3 +87,28 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   }
   return (await res.json()) as T;
 }
+
+/** Count of archived listings the given (unsaved) criteria would match.
+ *
+ * `exact` is the subset where every filtered field was actually KNOWN on the
+ * listing. Both numbers are shown because "absence is not mismatch" (the
+ * server-side matching rule) makes the total alone a poor tuning signal: a
+ * listing with no price satisfies any budget, so tightening the budget barely
+ * moves `count` while `exact` responds immediately. */
+export interface PreviewCounts {
+  count: number;
+  exact: number;
+  days: number;
+}
+
+// Deliberately takes no AbortSignal: tmaFetch uses `init.signal ?? its own`,
+// so handing it a caller signal would REPLACE the request timeout rather
+// than compose with it -- a stalled preview would then hang forever again,
+// which is the exact bug the timeout was added for. Callers drop stale
+// responses with a sequence counter instead (see Hub.tsx).
+export function fetchPreview(payload: unknown): Promise<PreviewCounts> {
+  return apiRequest<PreviewCounts>("/api/preview", {
+    method: "POST",
+    body: JSON.stringify({ payload }),
+  });
+}

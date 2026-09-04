@@ -5,7 +5,18 @@ import type { ThemeParams } from "./types";
 
 export interface TelegramWebAppLike {
   initData: string;
-  initDataUnsafe: { user?: { language_code?: string; id?: number } };
+  initDataUnsafe: {
+    user?: {
+      language_code?: string;
+      id?: number;
+      // Display-only (hub PROFILE row). Unsigned data -- never used for
+      // anything a server decision depends on; the API identifies the user
+      // from the SIGNED initData string, not from this.
+      first_name?: string;
+      last_name?: string;
+      username?: string;
+    };
+  };
   themeParams: ThemeParams;
   ready: () => void;
   expand: () => void;
@@ -68,6 +79,19 @@ export function getLang(): "ru" | "he" | "en" {
     (navigator.language || "ru").slice(0, 2);
   const l = lc.slice(0, 2);
   return l === "he" || l === "en" ? l : "ru";
+}
+
+/** The Telegram-supplied display identity, for the hub's PROFILE row.
+ * Reads initDataUnsafe, which is exactly what its name says: unverified.
+ * Safe here because it only ever renders a name -- every authenticated
+ * call still sends the signed initData and the server re-derives the user
+ * id from that (see tg_webapp_auth.validate). */
+export function getUser(): {
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+} | null {
+  return getWebApp()?.initDataUnsafe?.user ?? null;
 }
 
 export function hapticSelection(): void {

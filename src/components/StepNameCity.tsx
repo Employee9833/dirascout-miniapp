@@ -14,7 +14,10 @@ const I18N = {
   en: { nameLabel: "Search name", namePlaceholder: "e.g. City 3-room ≤ 4500", cityLabel: "City" },
 } as const;
 
-export default function StepNameCity() {
+// `only` splits the two unrelated questions this screen used to bundle into
+// the hub's own "Название" and "Город" rows (2026-09-04). Undefined keeps
+// both, so any caller that wants the original combined screen is unchanged.
+export default function StepNameCity({ only }: { only?: "name" | "city" } = {}) {
   const lang = getLang();
   const T = I18N[lang];
   const name = useWizardStore((s) => s.name);
@@ -23,6 +26,7 @@ export default function StepNameCity() {
 
   return (
     <div className="space-y-5">
+      {only !== "city" && (
       <div>
         <label className="label" htmlFor="name">
           {T.nameLabel}
@@ -35,7 +39,9 @@ export default function StepNameCity() {
           onChange={(e) => set("name", e.target.value)}
         />
       </div>
+      )}
 
+      {only !== "name" && (
       <div>
         <label className="label">{T.cityLabel}</label>
         <div className="grid grid-cols-3 gap-2">
@@ -61,6 +67,7 @@ export default function StepNameCity() {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

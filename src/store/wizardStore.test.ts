@@ -5,22 +5,22 @@ beforeEach(() => {
   useWizardStore.getState().reset();
 });
 
-describe("wizardStore: step navigation", () => {
-  it("next() advances, capped at step 3", () => {
-    const { next } = useWizardStore.getState();
-    next(); next(); next(); next(); next();
-    expect(useWizardStore.getState().step).toBe(3);
+describe("wizardStore: pane navigation (hub-and-spoke, 2026-09-04)", () => {
+  it("starts on the hub", () => {
+    expect(useWizardStore.getState().pane).toBeNull();
   });
 
-  it("back() retreats, capped at step 0", () => {
-    const { back } = useWizardStore.getState();
-    back(); back();
-    expect(useWizardStore.getState().step).toBe(0);
+  it("openPane() opens one, closePane() returns to the hub", () => {
+    useWizardStore.getState().openPane("price");
+    expect(useWizardStore.getState().pane).toBe("price");
+    useWizardStore.getState().closePane();
+    expect(useWizardStore.getState().pane).toBeNull();
   });
 
-  it("goTo() jumps directly", () => {
-    useWizardStore.getState().goTo(2);
-    expect(useWizardStore.getState().step).toBe(2);
+  it("opening a second pane replaces the first (no nesting)", () => {
+    useWizardStore.getState().openPane("price");
+    useWizardStore.getState().openPane("location");
+    expect(useWizardStore.getState().pane).toBe("location");
   });
 });
 
@@ -125,15 +125,41 @@ describe("wizardStore: toPayload", () => {
 });
 
 describe("wizardStore: reset", () => {
-  it("returns every field to its initial value, including step", () => {
+  it("returns every field to its initial value, including the open pane", () => {
     const s = useWizardStore.getState();
     s.set("name", "x");
     s.toggleDistrict("אפרידר");
-    s.goTo(2);
+    s.openPane("rooms");
     s.reset();
     const fresh = useWizardStore.getState();
     expect(fresh.name).toBe("");
     expect(fresh.districts).toEqual([]);
-    expect(fresh.step).toBe(0);
+    expect(fresh.pane).toBeNull();
+  });
+});
+
+// The user stopped naming searches (2026-09-04, "один фильтр основной"),
+// but `name` is still a required non-empty API field -- so toPayload() must
+// always produce one, and must never send "".
+describe("wizardStore: auto-generated name", () => {
+  it("describes the criteria the user actually set", () => {
+    const s = useWizardStore.getState();
+    s.set("city", "אשקלון");
+    s.set("rooms_min", 3);
+    s.set("rooms_max", 4);
+    s.set("price_max", 4800);
+    const name = useWizardStore.getState().toPayload().name;
+    expect(name).toContain("Ашкелон");
+    expect(name).toContain("3-4");
+    expect(name).toContain("4800");
+  });
+
+  it("never yields an empty name, even with nothing set at all", () => {
+    expect(useWizardStore.getState().toPayload().name.trim()).not.toBe("");
+  });
+
+  it("an existing profile's own name is preserved over the auto one", () => {
+    useWizardStore.getState().loadFromPreload({ name: "Моя старая подписка", city: "אשקלון" });
+    expect(useWizardStore.getState().toPayload().name).toBe("Моя старая подписка");
   });
 });
