@@ -13,7 +13,7 @@ const I18N = {
     user: "Пользователь", notifications: "Уведомления", language: "Язык",
     location: "Локация", price: "Цена",
     rooms: "Комнаты", area: "Площадь", floor: "Этаж", mamad: "Мамад",
-    quality: "Точность",
+    quality: "Точность", results: "РЕЗУЛЬТАТЫ", matches: "Совпадения",
     any: "Любая", anyM: "Любой", notSet: "Не указано", counting: "Считаем…",
     countErr: "Не удалось посчитать",
     found: (n: number, e: number, d: number) =>
@@ -25,7 +25,7 @@ const I18N = {
     user: "משתמש", notifications: "התראות", language: "שפה",
     location: "מיקום", price: "מחיר",
     rooms: "חדרים", area: "שטח", floor: "קומה", mamad: 'ממ"ד',
-    quality: "דיוק",
+    quality: "דיוק", results: "תוצאות", matches: "התאמות",
     any: "הכול", anyM: "הכול", notSet: "לא הוגדר", counting: "סופרים…",
     countErr: "הספירה נכשלה",
     found: (n: number, e: number, d: number) => `${n} מודעות ב-${d} ימים · ${e} מדויקות`,
@@ -36,7 +36,7 @@ const I18N = {
     user: "User", notifications: "Notifications", language: "Language",
     location: "Location", price: "Price",
     rooms: "Rooms", area: "Area", floor: "Floor", mamad: "Safe room",
-    quality: "Match quality",
+    quality: "Match quality", results: "RESULTS", matches: "Matches",
     any: "Any", anyM: "Any", notSet: "Not set", counting: "Counting…",
     countErr: "Could not count",
     found: (n: number, e: number, d: number) =>
@@ -103,7 +103,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function Hub({ onOpen }: { onOpen: (p: PaneKey) => void }) {
+export default function Hub({ onOpen, onOpenMatches }: {
+  onOpen: (p: PaneKey) => void;
+  onOpenMatches: () => void;
+}) {
   const lang = getLang() as Lang;
   const T = I18N[lang];
   const s = useWizardStore();
@@ -230,6 +233,14 @@ export default function Hub({ onOpen }: { onOpen: (p: PaneKey) => void }) {
                     ? (lang === "he" ? "מדויק" : lang === "en" ? "Exact only" : "Только точное")
                     : (lang === "he" ? "קרוב מספיק" : lang === "en" ? "Close enough" : "Близкое")}
              onClick={() => onOpen("quality")} />
+      </Section>
+
+      {/* The feed lives on its own screen, not behind a wizard pane -- it is
+          read-only history, not a filter field. Same in-app navigation the
+          manage list uses (?action=matches), so the bot can also deep-link
+          straight to it. */}
+      <Section title={T.results}>
+        <Row icon="🔔" label={T.matches} value="" onClick={onOpenMatches} />
       </Section>
     </div>
   );

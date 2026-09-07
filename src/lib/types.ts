@@ -51,3 +51,51 @@ export interface Subscription extends Omit<SearchPayload, "action" | "profile_id
 // a UX hint -- the API enforces the real block server-side either way)
 // checks the name directly.
 export const CITY_PROFILE_NAME = "Личный City-поиск";
+
+// --- matches feed (2026-09-07) --------------------------------------------
+// Mirrors api_server.py's _match_card() / list_match_profiles(). Deliberately
+// separate from `Subscription`: that one round-trips back into the wizard as
+// an editable payload, these are read-only projections of a match+listing
+// pair and never get sent anywhere.
+
+/** One row of the matches index: a search plus how much it has found. */
+export interface MatchProfile {
+  id: number;
+  name: string;
+  active: boolean;
+  exact: number;
+  partial: number;
+  last_matched_at: string | null;
+}
+
+export type MatchQuality = "exact" | "partial";
+
+/** One listing card in a search's feed. Every field except the identifiers
+ * can be null — that is the archive's normal state, not an error (the whole
+ * "absence is not mismatch" rule the matcher runs on), so the UI renders
+ * what exists and stays quiet about the rest. */
+export interface MatchCard {
+  match_id: number;
+  listing_id: number;
+  quality: MatchQuality;
+  matched_at: string;
+  /** Which filtered fields the listing never stated — why this is `partial`. */
+  unknown_fields: string[];
+  price: number | null;
+  rooms: number | null;
+  floor: number | null;
+  sqm: number | null;
+  /** 1 present, 0 confirmed absent, null unknown (tri-state, 2026-09-07). */
+  mamad: number | null;
+  seller: "agent" | "private" | null;
+  city: string | null;
+  district: string | null;
+  street: string | null;
+  text: string;
+  photos: string[];
+  url: string | null;
+  sources: string[];
+  times_seen: number;
+  posted_at: number | null;
+  first_seen: string;
+}

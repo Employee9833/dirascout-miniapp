@@ -6,6 +6,7 @@
 // for no benefit here (see docs/plan-miniapp-api.md §5's own note).
 
 import { getInitData } from "./telegram";
+import type { MatchCard, MatchProfile, MatchQuality } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -111,4 +112,19 @@ export function fetchPreview(payload: unknown): Promise<PreviewCounts> {
     method: "POST",
     body: JSON.stringify({ payload }),
   });
+}
+
+/** The matches index: active searches with their exact/partial counts. */
+export function fetchMatchProfiles(): Promise<{ items: MatchProfile[] }> {
+  return apiRequest<{ items: MatchProfile[] }>("/api/matches");
+}
+
+/** One search's feed, filtered to a single quality tab. */
+export function fetchMatchFeed(
+  profileId: number,
+  quality: MatchQuality,
+): Promise<{ profile: { id: number; name: string }; items: MatchCard[] }> {
+  return apiRequest<{ profile: { id: number; name: string }; items: MatchCard[] }>(
+    `/api/matches/${profileId}?quality=${quality}`,
+  );
 }

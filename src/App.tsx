@@ -9,6 +9,7 @@ import StepRanges from "./components/StepRanges";
 import StepFinal from "./components/StepFinal";
 import ManageSubs from "./components/ManageSubs";
 import Hub from "./components/Hub";
+import Matches from "./components/Matches";
 import LocationPane from "./components/LocationPane";
 import type { PaneKey } from "./store/wizardStore";
 
@@ -119,30 +120,37 @@ export default function App() {
   // inline-launched app; see lib/telegram.ts's getInitData docstring).
   // `returnToManage` remembers whether a successful wizard submit should go
   // back to the list (edit-in-place) or close the app (a fresh launch).
-  const initialMode: "wizard" | "manage" =
-    new URLSearchParams(window.location.search).get("action") === "manage" ? "manage" : "wizard";
-  const [mode, setMode] = useState<"wizard" | "manage">(initialMode);
+  const _launchAction = new URLSearchParams(window.location.search).get("action");
+  const initialMode: "wizard" | "manage" | "matches" =
+    _launchAction === "manage" ? "manage"
+    : _launchAction === "matches" ? "matches"
+    : "wizard";
+  const [mode, setMode] = useState<"wizard" | "manage" | "matches">(initialMode);
   const [returnToManage, setReturnToManage] = useState(false);
 
   // What the launch URL asks for, decided once. The bot builds four
   // distinct entry points and they are NOT interchangeable:
   //   ?action=new    -> a blank create form (the "＋ новый поиск" button)
   //   ?action=edit   -> that ONE profile, preloaded from the deep link
-  //   ?action=manage -> the subscriptions list
-  //   (no action)    -> the user's one main filter (2026-09-04)
+  //   ?action=manage  -> the subscriptions list
+  //   ?action=matches -> the matches feed (2026-09-07)
+  //   (no action)     -> the user's one main filter (2026-09-04)
   //
   // Found live 2026-09-04, immediately after shipping the hub: only `manage`
   // and `edit` were checked, so `?action=new` fell through to the main-filter
   // branch and silently opened the user's EXISTING search instead. Creating a
   // second search became impossible -- every attempt edited the first one.
-  const launchAction = new URLSearchParams(window.location.search).get("action");
 
   useEffect(() => {
     if (initialMode === "manage") {
       fetchAll();
       return;
     }
-    if (launchAction === "new") return;   // blank form, load nothing
+    // The matches feed loads its own data (matchesStore) and never touches
+    // the wizard, so neither the subscriptions fetch nor the main-filter
+    // preload below is any use to it.
+    if (initialMode === "matches") return;
+    if (_launchAction === "new") return;   // blank form, load nothing
     const pre = readPreload();
     if (pre) {
       loadFromPreload(pre);
@@ -287,6 +295,14 @@ export default function App() {
     );
   }
 
+  if (mode === "matches") {
+    return (
+      <div className="mx-auto flex min-h-full max-w-md flex-col pb-24 pt-4">
+        <Matches lang={lang} />
+      </div>
+    );
+  }
+
   const active = pane !== null ? PANES[pane] : null;
 
   return (
@@ -297,7 +313,7 @@ export default function App() {
         </h1>
       </header>
       <main className={`flex-1 ${active ? "px-4" : ""}`}>
-        {active ? active.node() : <Hub onOpen={openPane} />}
+        {active ? active.node() : <Hub onOpen={openPane} onOpenMatches={() => setMode("matches")} />}
       </main>
       <div className="px-4">
       {subsSessionExpired && (
