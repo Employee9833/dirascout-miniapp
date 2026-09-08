@@ -1,5 +1,5 @@
 import { useWizardStore } from "../store/wizardStore";
-import { getLang, hapticSelection } from "../lib/telegram";
+import { getLang } from "../lib/telegram";
 
 interface RangeDef {
   key: "rooms" | "price" | "sqm" | "floor";
@@ -74,10 +74,7 @@ export default function StepRanges({ only }: { only?: RangeDef["key"] } = {}) {
           </div>
         </div>
       ))}
-      <p
-        className="cursor-pointer text-[13px] text-accent"
-        onClick={() => hapticSelection()}
-      >
+      <p className="text-[13px] text-muted">
         {lang === "he" ? "השאר ריק = ללא הגבלה" : lang === "en" ? "Leave empty = no limit" : "Пустое поле = без ограничения"}
       </p>
     </div>

@@ -98,4 +98,8 @@ export interface MatchCard {
   times_seen: number;
   posted_at: number | null;
   first_seen: string;
+  /** Premium liveness probe: 1 still on its board, 0 gone from it, null
+   * never checked (every free-tier card). Tri-state — null is NOT "alive". */
+  alive?: number | null;
+  checked_at?: string | null;
 }

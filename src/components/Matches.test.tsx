@@ -180,3 +180,16 @@ describe("Matches screen", () => {
     await findByText(/boom/);
   });
 });
+
+describe("liveness badge (premium probe)", () => {
+  it("only a CONFIRMED gone listing is flagged; unknown stays silent", () => {
+    // alive is tri-state, same rule as mamad: null means nobody checked,
+    // which must never render as either verdict.
+    const gone = render(<ListingCard card={card({ alive: 0 })} lang="ru" />);
+    expect(within(gone.container).getByText("скорее всего сдано")).toBeTruthy();
+    const unchecked = render(<ListingCard card={card({ alive: null })} lang="ru" />);
+    expect(within(unchecked.container).queryByText(/сдано/)).toBeNull();
+    const live = render(<ListingCard card={card({ alive: 1 })} lang="ru" />);
+    expect(within(live.container).queryByText(/сдано/)).toBeNull();
+  });
+});

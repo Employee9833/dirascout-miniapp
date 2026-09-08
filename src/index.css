@@ -21,6 +21,12 @@
     --tg-fg: #f5f5f5;
     --tg-hint: #8a99a5;
     --tg-card: #232e3c;
+    /* The light-theme accent is 3.6:1 on this background -- below WCAG AA,
+       and `accent` is a TEXT color too (section headers, the feed's back
+       link), not only a button fill. Telegram's own dark button_color
+       overwrites this before first paint; the fallback has to stand on its
+       own for the bare-browser dark preview. */
+    --tg-accent: #4a9eff;
   }
 }
 
@@ -44,7 +50,7 @@ body {
   @apply w-full rounded-btn bg-surface px-3 py-2.5 text-[16px] text-ink shadow-border outline-none;
 }
 .field:focus {
-  box-shadow: 0 0 0 2px hsla(212, 100%, 48%, 1);
+  box-shadow: 0 0 0 2px var(--tg-accent);
 }
 .label {
   @apply mb-1.5 block text-[13px] font-medium text-sub;

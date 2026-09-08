@@ -7,6 +7,7 @@ type Lang = "ru" | "he" | "en";
 const I18N = {
   ru: {
     rooms: "комн.", floor: "этаж", mamadYes: "мамад", mamadNo: "без мамада",
+    gone: "скорее всего сдано",
     agent: "маклер", private: "без посредника", open: "Открыть объявление",
     repeat: "повтор", unknownPrefix: "не указано:",
     f: { district: "район", mamad: "мамад", sqm: "площадь", price: "цена",
@@ -16,6 +17,7 @@ const I18N = {
   },
   he: {
     rooms: "חד'", floor: "קומה", mamadYes: 'ממ"ד', mamadNo: 'ללא ממ"ד',
+    gone: "כנראה כבר הושכר",
     agent: "מתווך", private: "ללא תיווך", open: "פתיחת המודעה",
     repeat: "חוזר", unknownPrefix: "לא צוין:",
     f: { district: "שכונה", mamad: 'ממ"ד', sqm: "שטח", price: "מחיר",
@@ -25,6 +27,7 @@ const I18N = {
   },
   en: {
     rooms: "rooms", floor: "floor", mamadYes: "safe room", mamadNo: "no safe room",
+    gone: "probably taken",
     agent: "agent", private: "no agent", open: "Open listing",
     repeat: "repeat", unknownPrefix: "not stated:",
     f: { district: "district", mamad: "safe room", sqm: "area", price: "price",
@@ -110,7 +113,14 @@ export default function ListingCard({ card, lang }: { card: MatchCard; lang: Lan
               ? `${card.price.toLocaleString("ru-RU")} ₪`
               : <span className="text-[15px] font-normal text-muted">{T.noPrice}</span>}
           </span>
-          <span className="shrink-0 text-[12px] text-muted">{whenLabel(card, T)}</span>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {card.alive === 0 && (
+              <span className="rounded-pill bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                {T.gone}
+              </span>
+            )}
+            <span className="text-[12px] text-muted">{whenLabel(card, T)}</span>
+          </span>
         </div>
 
         {placeLabel(card) && (
