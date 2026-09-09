@@ -125,12 +125,25 @@ describe("ManageSubs", () => {
     });
   });
 
-  it("hides the edit button for the personal City profile, still shows pause/delete", () => {
+  it("offers only pause for the personal City profile -- no edit, no delete", () => {
+    // 2026-09-08: 🗑 used to be shown here and the server did NOT refuse it,
+    // so tapping it soft-deleted the City profile -- deliver_city_report()
+    // then went silent forever and the row vanished from this very list, so
+    // there was no way to undo it. The server refuses it now; the button is
+    // gone too, because a control that can only fail is its own bug.
     seedStore([makeItem({ name: CITY_PROFILE_NAME })]);
     const { queryByText, getByText } = render(<ManageSubs lang="ru" onEdit={vi.fn()} />);
     expect(queryByText("✏️ Изменить")).toBeNull();
+    expect(queryByText("🗑 Удалить")).toBeNull();
     expect(getByText("⏸ Пауза")).toBeTruthy();
+  });
+
+  it("an ordinary profile still offers all three actions", () => {
+    seedStore([makeItem({ name: "Ашкелон афридар" })]);
+    const { getByText } = render(<ManageSubs lang="ru" onEdit={vi.fn()} />);
+    expect(getByText("✏️ Изменить")).toBeTruthy();
     expect(getByText("🗑 Удалить")).toBeTruthy();
+    expect(getByText("⏸ Пауза")).toBeTruthy();
   });
 
   it("edit calls onEdit with the item, no network request", () => {

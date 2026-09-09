@@ -9,6 +9,7 @@ type Lang = "ru" | "he" | "en";
 const I18N = {
   ru: {
     title: "Совпадения",
+    back: "Назад",
     empty: "Совпадений пока нет.",
     emptyHint: "Они появятся, когда монитор найдёт подходящее объявление.",
     loading: "Загружаем…",
@@ -23,6 +24,7 @@ const I18N = {
   },
   he: {
     title: "התאמות",
+    back: "חזרה",
     empty: "אין עדיין התאמות.",
     emptyHint: "הן יופיעו כשהמוניטור ימצא מודעה מתאימה.",
     loading: "טוען…",
@@ -37,6 +39,7 @@ const I18N = {
   },
   en: {
     title: "Matches",
+    back: "Back",
     empty: "No matches yet.",
     emptyHint: "They show up once the monitor finds a listing that fits.",
     loading: "Loading…",
@@ -120,7 +123,7 @@ export default function Matches({ lang, onBack }: { lang: Lang; onBack?: () => v
         <header className="mb-3 px-4">
           <button
             type="button"
-            onClick={() => { hapticSelection(); setOpen(null); onBack?.(); }}
+            onClick={() => { hapticSelection(); setOpen(null); }}
             className="mb-2 text-[13px] text-accent"
           >
             ‹ {T.title}
@@ -172,6 +175,19 @@ export default function Matches({ lang, onBack }: { lang: Lang; onBack?: () => v
   // --- the index: searches and what each has found -----------------------
   return (
     <div className="pb-4">
+      {/* An in-app way out of the whole section. Telegram's native BackButton
+          does this too (App.tsx), but it does not exist outside Telegram and
+          this screen used to be a dead end -- the only exit was closing the
+          app (2026-09-08 audit). The feed level keeps its own ‹ back to here. */}
+      {onBack && (
+        <button
+          type="button"
+          onClick={() => { hapticSelection(); onBack(); }}
+          className="mb-2 px-4 text-[13px] text-accent"
+        >
+          ‹ {T.back}
+        </button>
+      )}
       <h1 className="mb-3 px-4 text-xl font-semibold">{T.title}</h1>
       {error && <p className="px-4 text-[14px] text-red-500">{error}</p>}
       {profilesLoading && profiles.length === 0 && (

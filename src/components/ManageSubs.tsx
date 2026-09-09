@@ -168,26 +168,33 @@ export default function ManageSubs({
                   {T.edit}
                 </button>
               )}
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  if (confirmId === item.id) {
-                    hapticImpact("light");
-                    remove(item.id as number);
-                  } else {
-                    hapticSelection();
-                    setConfirmId(item.id);
-                  }
-                }}
-                className={`pill border ${
-                  confirmId === item.id
-                    ? "border-transparent bg-red-500 text-white"
-                    : "border-line bg-surface text-ink"
-                }`}
-              >
-                {confirmId === item.id ? T.delConfirm : T.del}
-              </button>
+              {/* No 🗑 for the City profile: the server refuses to delete it
+                  (bot._delete_subscription), because losing it silences the
+                  personal report permanently with no way back from any UI.
+                  A button that can only ever fail is its own bug -- ⏸ above
+                  is the real action for that row (2026-09-08). */}
+              {editable && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    if (confirmId === item.id) {
+                      hapticImpact("light");
+                      remove(item.id as number);
+                    } else {
+                      hapticSelection();
+                      setConfirmId(item.id);
+                    }
+                  }}
+                  className={`pill border ${
+                    confirmId === item.id
+                      ? "border-transparent bg-red-500 text-white"
+                      : "border-line bg-surface text-ink"
+                  }`}
+                >
+                  {confirmId === item.id ? T.delConfirm : T.del}
+                </button>
+              )}
             </div>
           </div>
         );

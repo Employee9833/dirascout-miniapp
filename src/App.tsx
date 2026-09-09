@@ -199,6 +199,11 @@ export default function App() {
       handler = () => { hapticImpact("light"); closePane(); };
     } else if (mode === "wizard" && returnToManage) {
       handler = () => { hapticImpact("light"); setMode("manage"); };
+    } else if (mode === "matches") {
+      // Matches is reached FROM the hub, so it has somewhere to go back to.
+      // Without this the screen was a dead end: BackButton hid itself and the
+      // only way out was closing the whole app (2026-09-08 audit).
+      handler = () => { hapticImpact("light"); setMode("wizard"); };
     }
     if (!handler) {
       bb.hide();
@@ -298,7 +303,7 @@ export default function App() {
   if (mode === "matches") {
     return (
       <div className="mx-auto flex min-h-full max-w-md flex-col pb-24 pt-4">
-        <Matches lang={lang} />
+        <Matches lang={lang} onBack={() => setMode("wizard")} />
       </div>
     );
   }

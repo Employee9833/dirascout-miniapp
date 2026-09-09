@@ -193,3 +193,36 @@ describe("liveness badge (premium probe)", () => {
     expect(within(live.container).queryByText(/сдано/)).toBeNull();
   });
 });
+
+describe("Matches navigation is not a dead end", () => {
+  beforeEach(() => {
+    useMatchesStore.getState().reset();
+    (window as any).Telegram = undefined;
+    vi.restoreAllMocks();
+  });
+
+  // 2026-09-08 audit: opening Matches from the hub left no way back --
+  // the native BackButton was hidden for this mode and nothing in-app
+  // offered an exit, so the user had to close the whole Mini App.
+  it("the index offers a way back out of the section", async () => {
+    mockApi();
+    const onBack = vi.fn();
+    const { findByText, getByText } = render(<Matches lang="ru" onBack={onBack} />);
+    await findByText("Ашкелон афридар");
+    act(() => { fireEvent.click(getByText(/‹ Назад/)); });
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it("a feed's own back goes to the index, NOT out of the section", async () => {
+    mockApi();
+    const onBack = vi.fn();
+    const { findByText, getByText } = render(<Matches lang="ru" onBack={onBack} />);
+    await findByText("Ашкелон афридар");
+    act(() => { fireEvent.click(getByText("Ашкелон афридар")); });
+    await findByText(/Точные/);
+    act(() => { fireEvent.click(getByText(/‹ Совпадения/)); });
+    // back at the index, and the section was NOT exited
+    await findByText("Ашкелон афридар");
+    expect(onBack).not.toHaveBeenCalled();
+  });
+});

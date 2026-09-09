@@ -9,7 +9,13 @@
      page bare (dev preview, a browser tab), so it never fights the SDK. */
   --tg-bg: #ffffff;
   --tg-fg: #171717;
-  --tg-hint: #808080;
+  /* 2026-09-08 audit: #808080 was 3.78-3.95:1 on this section's own
+     --tg-card/#ffffff -- below WCAG AA 4.5:1, and this isn't decorative:
+     `muted`/`sub` (tailwind.config.js) render it as the actual VALUE text
+     on Hub rows ("Ашкелон, 2 района"). #6b7280 clears AA on both
+     (4.83 / 4.63). The dark fallback below (#8a99a5) already clears AA
+     against both dark backgrounds and is untouched. */
+  --tg-hint: #6b7280;
   --tg-accent: #0a72ef;
   --tg-accent-text: #ffffff;
   --tg-card: #fafafa;
