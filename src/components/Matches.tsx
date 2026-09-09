@@ -91,6 +91,12 @@ export default function Matches({ lang, onBack }: { lang: Lang; onBack?: () => v
           loadProfiles, loadFeed } = useMatchesStore();
   const [open, setOpen] = useState<MatchProfile | null>(null);
   const [tab, setTab] = useState<MatchQuality>("exact");
+  // Listings this session has reported. The server already set blocked_at, so
+  // they would vanish on the next fetch anyway -- this only avoids leaving a
+  // card on screen that is already hidden from everyone. Local rather than a
+  // store action: nothing outside this view needs to know, and the store's
+  // cached feeds are refetched on the next open regardless.
+  const [hidden, setHidden] = useState<Set<number>>(new Set());
 
   useEffect(() => { loadProfiles(); }, [loadProfiles]);
 
@@ -164,8 +170,13 @@ export default function Matches({ lang, onBack }: { lang: Lang; onBack?: () => v
           </p>
         )}
         <div className="space-y-3 px-4">
-          {(cards ?? []).map((c) => (
-            <ListingCard key={c.match_id} card={c} lang={lang} />
+          {(cards ?? []).filter((c) => !hidden.has(c.listing_id)).map((c) => (
+            <ListingCard
+              key={c.match_id}
+              card={c}
+              lang={lang}
+              onHidden={(id) => setHidden((prev) => new Set(prev).add(id))}
+            />
           ))}
         </div>
       </div>

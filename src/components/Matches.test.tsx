@@ -226,3 +226,95 @@ describe("Matches navigation is not a dead end", () => {
     expect(onBack).not.toHaveBeenCalled();
   });
 });
+
+// --- ⭐/🚩 on the card (2026-09-08 audit §4.5) --------------------------
+// Until these landed the Mini App could SHOW a listing but not act on it:
+// favoriting and reporting existed only as bot callbacks.
+describe("ListingCard actions", () => {
+  function mockActions(overrides: Record<string, { ok: boolean; status: number }> = {}) {
+    const calls: { url: string; method: string; body: unknown }[] = [];
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const u = String(url);
+      const method = init?.method ?? "GET";
+      if (u.includes("/api/favorites") || u.includes("/api/reports")) {
+        calls.push({ url: u, method,
+                     body: init?.body ? JSON.parse(String(init.body)) : null });
+        const key = u.includes("/api/reports") ? "report" : "favorite";
+        const o = overrides[key] ?? { ok: true, status: 200 };
+        return Promise.resolve({ ...o, json: async () => ({ ok: o.ok, favorite: true, left: 2 }),
+                                 text: async () => "nope" });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return calls;
+  }
+
+  it("the star reflects the server's state instead of always looking empty", () => {
+    const { getByLabelText, rerender } = render(
+      <ListingCard card={card({ favorite: false })} lang="ru" />);
+    expect(getByLabelText("В избранное")).toBeTruthy();
+    rerender(<ListingCard card={card({ favorite: true })} lang="ru" />);
+    expect(getByLabelText("В избранном")).toBeTruthy();
+  });
+
+  it("starring posts the listing id and keeps the lit state", async () => {
+    const calls = mockActions();
+    const { getByLabelText } = render(<ListingCard card={card()} lang="ru" />);
+    act(() => { fireEvent.click(getByLabelText("В избранное")); });
+    await waitFor(() => expect(calls.length).toBe(1));
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].body).toEqual({ listing_id: 10 });
+    await waitFor(() => expect(getByLabelText("В избранном")).toBeTruthy());
+  });
+
+  it("a failed star does NOT stay lit -- that would read as saved", async () => {
+    mockActions({ favorite: { ok: false, status: 500 } });
+    const { getByLabelText, findByText } = render(<ListingCard card={card()} lang="ru" />);
+    act(() => { fireEvent.click(getByLabelText("В избранное")); });
+    await findByText("Не получилось");
+    expect(getByLabelText("В избранное")).toBeTruthy();
+  });
+
+  it("the tier cap (409) gets its own message, not a generic failure", async () => {
+    mockActions({ favorite: { ok: false, status: 409 } });
+    const { getByLabelText, findByText } = render(<ListingCard card={card()} lang="ru" />);
+    act(() => { fireEvent.click(getByLabelText("В избранное")); });
+    await findByText("Достигнут лимит избранного");
+  });
+
+  it("the flag only OPENS the picker -- two taps, same as the bot", async () => {
+    const calls = mockActions();
+    const { getByLabelText, findByText } = render(<ListingCard card={card()} lang="ru" />);
+    act(() => { fireEvent.click(getByLabelText("Пожаловаться")); });
+    await findByText("Что не так?");
+    expect(calls.length).toBe(0);   // nothing reported yet
+    act(() => { fireEvent.click(getByLabelText("Пожаловаться")) });
+  });
+
+  it("picking a reason reports it and hides the card", async () => {
+    const calls = mockActions();
+    const onHidden = vi.fn();
+    const { getByLabelText, getByText, findByText } = render(
+      <ListingCard card={card()} lang="ru" onHidden={onHidden} />);
+    act(() => { fireEvent.click(getByLabelText("Пожаловаться")); });
+    await findByText("Что не так?");
+    act(() => { fireEvent.click(getByText("Уже сдано")); });
+    await waitFor(() => expect(calls.length).toBe(1));
+    expect(calls[0].body).toEqual({ listing_id: 10, reason: "rented" });
+    expect(onHidden).toHaveBeenCalledWith(10);
+  });
+
+  it("the daily report quota (429) says so instead of failing generically", async () => {
+    mockActions({ report: { ok: false, status: 429 } });
+    const onHidden = vi.fn();
+    const { getByLabelText, getByText, findByText } = render(
+      <ListingCard card={card()} lang="ru" onHidden={onHidden} />);
+    act(() => { fireEvent.click(getByLabelText("Пожаловаться")); });
+    await findByText("Что не так?");
+    act(() => { fireEvent.click(getByText("Спам")); });
+    await findByText("Лимит жалоб на сегодня исчерпан");
+    // a refused report must NOT hide the card -- nothing was reported
+    expect(onHidden).not.toHaveBeenCalled();
+  });
+});

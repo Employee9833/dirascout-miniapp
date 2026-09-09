@@ -6,7 +6,7 @@
 // for no benefit here (see docs/plan-miniapp-api.md §5's own note).
 
 import { getInitData } from "./telegram";
-import type { MatchCard, MatchProfile, MatchQuality } from "./types";
+import type { MatchCard, MatchProfile, MatchQuality, ReportReason } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -127,4 +127,34 @@ export function fetchMatchFeed(
   return apiRequest<{ profile: { id: number; name: string }; items: MatchCard[] }>(
     `/api/matches/${profileId}?quality=${quality}`,
   );
+}
+
+/** ⭐ a listing. 409 = at the tier cap, which is expected traffic rather than
+ * an error — the caller shows a message instead of a failure. */
+export function addFavorite(listingId: number): Promise<{ ok: boolean; favorite: boolean }> {
+  return apiRequest<{ ok: boolean; favorite: boolean }>("/api/favorites", {
+    method: "POST",
+    body: JSON.stringify({ listing_id: listingId }),
+  });
+}
+
+/** Un-⭐. */
+export function removeFavorite(listingId: number): Promise<{ ok: boolean; favorite: boolean }> {
+  return apiRequest<{ ok: boolean; favorite: boolean }>("/api/favorites", {
+    method: "DELETE",
+    body: JSON.stringify({ listing_id: listingId }),
+  });
+}
+
+/** 🚩 a listing with one of db.REPORT_REASONS. The reason is required: an
+ * unlabelled report lands in the operator's `--reports` as an unactionable
+ * pile, since each reason names a different upstream code path. */
+export function reportListing(
+  listingId: number,
+  reason: ReportReason,
+): Promise<{ ok: boolean; already: boolean; left: number }> {
+  return apiRequest<{ ok: boolean; already: boolean; left: number }>("/api/reports", {
+    method: "POST",
+    body: JSON.stringify({ listing_id: listingId, reason }),
+  });
 }

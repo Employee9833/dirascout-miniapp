@@ -102,4 +102,19 @@ export interface MatchCard {
    * never checked (every free-tier card). Tri-state — null is NOT "alive". */
   alive?: number | null;
   checked_at?: string | null;
+  /** Whether THIS user already starred it — so the ⭐ renders in the right
+   * state instead of always looking un-starred (2026-09-09). */
+  favorite?: boolean;
 }
+
+/** Mirrors db.REPORT_REASONS exactly. Each names a different upstream code
+ * path (deal_type gate, city gate, staleness, seller detection, dedup), which
+ * is why `--reports` can group them into actionable buckets instead of one
+ * pile — so the set must not drift from the Python side. */
+export type ReportReason =
+  | "spam"
+  | "rented"
+  | "wrong_place"
+  | "agent"
+  | "scam"
+  | "other";

@@ -1,6 +1,7 @@
-import { useState } from "react";
-import type { MatchCard } from "../lib/types";
+import { useEffect, useState } from "react";
+import type { MatchCard, ReportReason } from "../lib/types";
 import { hapticSelection } from "../lib/telegram";
+import { ApiError, addFavorite, removeFavorite, reportListing } from "../lib/apiClient";
 
 type Lang = "ru" | "he" | "en";
 
@@ -14,6 +15,12 @@ const I18N = {
          rooms: "комнаты", floor: "этаж", city: "город", street_code: "улица" },
     noPrice: "цена не указана", today: "сегодня", yesterday: "вчера",
     daysAgo: (n: number) => `${n} дн. назад`,
+    fav: "В избранное", favOn: "В избранном", report: "Пожаловаться",
+    reportWhy: "Что не так?", cancel: "Отмена",
+    reported: "Жалоба отправлена", favLimit: "Достигнут лимит избранного",
+    reportLimit: "Лимит жалоб на сегодня исчерпан", failed: "Не получилось",
+    reasons: { spam: "Спам", rented: "Уже сдано", wrong_place: "Не тот район",
+               agent: "Маклер", scam: "Мошенничество", other: "Другое" },
   },
   he: {
     rooms: "חד'", floor: "קומה", mamadYes: 'ממ"ד', mamadNo: 'ללא ממ"ד',
@@ -24,6 +31,12 @@ const I18N = {
          rooms: "חדרים", floor: "קומה", city: "עיר", street_code: "רחוב" },
     noPrice: "מחיר לא צוין", today: "היום", yesterday: "אתמול",
     daysAgo: (n: number) => `לפני ${n} ימים`,
+    fav: "הוספה למועדפים", favOn: "במועדפים", report: "דיווח",
+    reportWhy: "מה הבעיה?", cancel: "ביטול",
+    reported: "הדיווח נשלח", favLimit: "הגעת למגבלת המועדפים",
+    reportLimit: "נגמרו הדיווחים להיום", failed: "לא הצליח",
+    reasons: { spam: "ספאם", rented: "כבר הושכר", wrong_place: "שכונה לא נכונה",
+               agent: "מתווך", scam: "הונאה", other: "אחר" },
   },
   en: {
     rooms: "rooms", floor: "floor", mamadYes: "safe room", mamadNo: "no safe room",
@@ -34,6 +47,12 @@ const I18N = {
          rooms: "rooms", floor: "floor", city: "city", street_code: "street" },
     noPrice: "no price", today: "today", yesterday: "yesterday",
     daysAgo: (n: number) => `${n}d ago`,
+    fav: "Save", favOn: "Saved", report: "Report",
+    reportWhy: "What is wrong?", cancel: "Cancel",
+    reported: "Report sent", favLimit: "Favorites limit reached",
+    reportLimit: "No reports left today", failed: "Did not work",
+    reasons: { spam: "Spam", rented: "Already taken", wrong_place: "Wrong area",
+               agent: "Agent", scam: "Scam", other: "Other" },
   },
 } as const;
 
@@ -72,8 +91,74 @@ function Chip({ children, tone = "plain" }: {
   );
 }
 
-export default function ListingCard({ card, lang }: { card: MatchCard; lang: Lang }) {
+const REPORT_REASONS: ReportReason[] = [
+  "spam", "rented", "wrong_place", "agent", "scam", "other",
+];
+
+export default function ListingCard({
+  card, lang, onHidden,
+}: {
+  card: MatchCard;
+  lang: Lang;
+  /** Called after a successful report: the listing is now blocked_at on the
+   * server and would vanish on the next fetch anyway, so the feed drops it
+   * immediately rather than showing a card that is already gone for everyone.
+   */
+  onHidden?: (listingId: number) => void;
+}) {
   const T = I18N[lang];
+  // Optimistic, but reverted on failure -- a star that stays lit after the
+  // request failed is worse than one that never lit, because the user walks
+  // away believing the listing is saved.
+  const [fav, setFav] = useState(Boolean(card.favorite));
+  // useState only seeds on MOUNT. The feed keys cards by match_id, so a
+  // refetch reuses this component instance -- without re-syncing, a star
+  // whose server-side state changed (starred from the bot, or from another
+  // device) would keep rendering whatever it was when first mounted.
+  useEffect(() => { setFav(Boolean(card.favorite)); },
+            [card.favorite, card.listing_id]);
+  const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function toggleFav() {
+    if (busy) return;
+    const next = !fav;
+    setBusy(true);
+    setFav(next);
+    hapticSelection();
+    try {
+      if (next) await addFavorite(card.listing_id);
+      else await removeFavorite(card.listing_id);
+      setNote(null);
+    } catch (e) {
+      setFav(!next);
+      // 409 is the tier cap, which is expected traffic and deserves its own
+      // message rather than a generic failure. Matched on ApiError.status,
+      // not on the message text -- the detail string is server-authored and
+      // localized, so substring-matching it would break on any wording change.
+      setNote(e instanceof ApiError && e.status === 409 ? T.favLimit : T.failed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendReport(reason: ReportReason) {
+    if (busy) return;
+    setBusy(true);
+    setPicking(false);
+    hapticSelection();
+    try {
+      await reportListing(card.listing_id, reason);
+      setNote(T.reported);
+      onHidden?.(card.listing_id);
+    } catch (e) {
+      // 429 = the 3/day quota, spent. Anything else is a real failure.
+      setNote(e instanceof ApiError && e.status === 429 ? T.reportLimit : T.failed);
+    } finally {
+      setBusy(false);
+    }
+  }
   // Photos are the single biggest "make it beautiful" lever here, but they
   // are also scraped CDN urls that expire (Facebook 403s, Telegram 404s --
   // the same class of failure that used to kill whole Telegram cards, see
@@ -159,18 +244,70 @@ export default function ListingCard({ card, lang }: { card: MatchCard; lang: Lan
           <span className="truncate text-[11px] text-muted">
             {card.sources.join(", ")}
           </span>
-          {card.url && (
-            <a
-              href={card.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => hapticSelection()}
-              className="shrink-0 rounded-btn bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-text"
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleFav}
+              disabled={busy}
+              aria-pressed={fav}
+              aria-label={fav ? T.favOn : T.fav}
+              title={fav ? T.favOn : T.fav}
+              className="rounded-btn px-2 py-1.5 text-[15px] leading-none disabled:opacity-50"
             >
-              {T.open}
-            </a>
-          )}
+              {fav ? "\u2b50" : "\u2606"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPicking((v) => !v)}
+              disabled={busy}
+              aria-label={T.report}
+              title={T.report}
+              className="rounded-btn px-2 py-1.5 text-[15px] leading-none disabled:opacity-50"
+            >
+              {"\ud83d\udea9"}
+            </button>
+            {card.url && (
+              <a
+                href={card.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => hapticSelection()}
+                className="rounded-btn bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-text"
+              >
+                {T.open}
+              </a>
+            )}
+          </div>
         </div>
+
+        {/* Two taps, same as the bot: the flag only opens the picker, and the
+            reason is what actually reports. Each reason names a different
+            upstream code path, so an unlabelled report would be unactionable. */}
+        {picking && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <span className="w-full text-[11px] text-muted">{T.reportWhy}</span>
+            {REPORT_REASONS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => sendReport(r)}
+                disabled={busy}
+                className="rounded-btn border border-hairline px-2 py-1 text-[12px] disabled:opacity-50"
+              >
+                {T.reasons[r]}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPicking(false)}
+              className="rounded-btn px-2 py-1 text-[12px] text-muted"
+            >
+              {T.cancel}
+            </button>
+          </div>
+        )}
+
+        {note && <p className="pt-1 text-[11px] text-muted">{note}</p>}
       </div>
     </article>
   );
