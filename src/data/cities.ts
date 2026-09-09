@@ -612,7 +612,8 @@ export const CITIES: CitiesData = {
           "key": "מחנה יהודה - לב העיר",
           "he": "מחנה יהודה - לב העיר",
           "ru": "Махане Йехуда – центр",
-          "en": "Mahane Yehuda – City Center"
+          "en": "Mahane Yehuda – City Center",
+          "parent": "מחנה יהודה"
         },
         {
           "key": "בית הכרם",
@@ -846,7 +847,8 @@ export const CITIES: CitiesData = {
           "key": "תלפיות תעשיה ומסחר",
           "he": "תלפיות תעשיה ומסחר",
           "ru": "Тальпиот пром.",
-          "en": "Talpiot Industrial"
+          "en": "Talpiot Industrial",
+          "parent": "תלפיות"
         },
         {
           "key": "הבוכרים",
@@ -1050,7 +1052,8 @@ export const CITIES: CitiesData = {
           "key": "מורדות ארנונה",
           "he": "מורדות ארנונה",
           "ru": "Мордот Арнона",
-          "en": "Arnona Slopes"
+          "en": "Arnona Slopes",
+          "parent": "ארנונה"
         },
         {
           "key": "מחנה יהודה",
